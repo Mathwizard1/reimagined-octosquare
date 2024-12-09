@@ -23,19 +23,17 @@ board_width = board_size * square_size
 board_height = board_size * square_size
 
 column_style = " \ta \t\t b \t\t c \t\t d \t\t e \t\t f \t\t g \t\t h\t "
-column_format = [x.strip('\t ') for x in column_style.split('\t ')]
 flipped = 0
 
 # dict to hold textures
 chess_pieces = {}
 piece_scale = 0.55
 
-# Chess move notation example
-chess_moves = []
 
 # Algebraic notation
 click_num = 0
-current_move = ""
+current_notation = ""
+hold_piece = ""
 
 # small offset
 ofs = 10
@@ -59,7 +57,7 @@ def valid_click(val):
     return False
 
 # Callback function to get the mouse position relative to the window
-def get_mouse_click_position(sender, app_data, user_data):
+def mouse_clicked(sender, app_data, user_data):
     # Check if the mouse is inside the window when clicked
     mouse_pos = dpg.get_mouse_pos()  # Get global mouse position
     window_pos = dpg.get_item_pos(user_data)  # Get window position
@@ -69,79 +67,141 @@ def get_mouse_click_position(sender, app_data, user_data):
     if (window_pos[0] <= mouse_pos[0] <= window_pos[0] + window_size[0] and 
        window_pos[1] <= mouse_pos[1] <= window_pos[1] + window_size[1]):
         
+        #print(window_pos[0], mouse_pos[0], window_size[0])
+        #print(window_pos[1], mouse_pos[1], window_size[1])
+
         # Calculate the relative mouse position inside the window
         relative_pos = (mouse_pos[0] - window_pos[0], mouse_pos[1] - window_pos[1])
         #print(f"Mouse clicked at: {relative_pos} (relative to the window)")
+        
+        r0 = int(relative_pos[0] / square_size)
+        f0 = int(relative_pos[1] / square_size)
 
-        valid_move = False
-        #not_pawn = False
-
-        global click_num, current_move
-        if(valid_click(relative_pos[0]) and valid_click(relative_pos[1])):
-            r = int(relative_pos[0] / square_size)
-            f = int(relative_pos[1] / square_size)
-            square_val = ((1 - flipped) * r + (flipped) * (7 - r)) + ((1 - flipped) * (7 - f) + (flipped) * f) * 8
-
-            if(engine.board.piece_at(square_val)):
-                valid_move = True
-                '''p = engine.board.piece_at(square_val).symbol().upper()
-                if(click_num == 0 and (p != "P" and p != "")):
-                    not_pawn = True
-                    current_move += p'''
-            click_num += 1
-            current_move += chess.square_name(square_val)
-
+        window_actv = dpg.get_active_window()
+        if(window_actv == dpg.get_alias_id("board_Window")):
+            global click_num, current_notation, hold_piece
             color = (255, 0, 0)
-            #print(current_move)
 
-            if(click_num == 2):
-                try:
-                    input_move = engine.board.parse_san(current_move) #[1:] if(not_pawn) else current_move)
+            if(valid_click(relative_pos[0]) and valid_click(relative_pos[1])):
+                r = (1 - flipped) * r0 + (flipped) * (7 - r0)
+                f = (1 - flipped) * (7 - f0) + (flipped) * f0
 
-                    valid_move = True
-                    engine.move(input_move)
-                    chess_moves.append(current_move)
+                square_val = (r) + (f) * 8
+                #print(f"[{r,f}]")
+
+                if(click_num == 0):
+                    if(engine.board.piece_at(square_val)):
+                        hold_piece = engine.board.piece_at(square_val).symbol()
+                    else:
+                        hold_piece = ""
+                        current_notation = ""
+                        return
+                
+                if(click_num < 2):
+                    click_num += 1
+                    current_notation += chess.square_name(square_val)
+
+                if(click_num > 1):
+                    promotion_list = ["q","r","b","n"]
+                    promotion_list = promotion_list if(f == 0) else [x.upper() for x in promotion_list]
+
+                    if(click_num == 2 and 
+                       ((hold_piece == "p" and f == 0) or (hold_piece == "P" and f == 7))):
+                        click_num += 1
+                        color = (0, 0, 255)
+
+                        with dpg.draw_layer(tag= "promotion_pieces", parent= "board_squares"):
+                            for x in range(2):
+                                for y in range(2):
+                                    top_left_x = (3 + y) * square_size
+                                    top_left_y = (3 + x) * square_size
+                                    dpg.draw_rectangle(
+                                        pmin=(top_left_x, top_left_y), 
+                                        pmax=(top_left_x + square_size, top_left_y + square_size), 
+                                        fill= color, parent= "promotion_pieces")
+                                    
+                                    tag = convert_symbol(promotion_list[2 * x + y])
+                                    width, height = chess_pieces[tag]
+                                    dpg.draw_image(tag, [top_left_x, top_left_y], [top_left_x + int(width * piece_scale), top_left_y + int(height * piece_scale)], parent= "promotion_pieces")
+                        
+                    elif(click_num == 3):
+                        if(3 <= r <= 4 and 3 <= f <= 4):
+                            click_num -= 1
+                            piece_chose = (1 - flipped) * ((r - 3) + 2 * (4 - f)) + flipped * ((4 - r) + 2 * (f - 3))
+                            current_notation += '=' + promotion_list[piece_chose].upper()
+                        else:
+                            click_num = 0
+                            current_notation = ""
+                            hold_piece = ""
+
+                            dpg.delete_item("tempRect")
+                            dpg.delete_item("promotion_pieces")
+                            return
+
+                    #print(current_notation)
+                    #print(click_num)
+
+                    try:
+                        input_move = engine.board.parse_san(current_notation) #[1:] if(not_pawn) else current_notation)
+                        
+                        #print("valid")
+
+                        engine.move(input_move)
+                        engine.chess_moves.append(current_notation)
+
+                        color = (0, 255, 0)
+
+                        update_chess_moves()
+                    except:
+                        #print("invalid")
+                        if(click_num == 3):
+                            return
+                        hold_piece = ""
+
+                    dpg.delete_item("promotion_pieces")
 
                     click_num = 0
-                    current_move = ""
-                    color = (0, 255, 0)
+                    current_notation = ""
 
-                    update_chess_moves()
-                except:
-                    click_num = 0
-                    current_move = ""
-                    valid_move = False
+            elif(click_num == 1):
+                click_num = 0
+                current_notation = ""
+                hold_piece = ""
 
-        elif(click_num == 1):
-            click_num = 0
-            current_move = ""
+            dpg.delete_item("tempRect")
+            if(hold_piece != ""):
+                top_left_x = r0 * square_size
+                top_left_y = f0 * square_size
+                dpg.draw_rectangle(
+                    pmin=(top_left_x, top_left_y), 
+                    pmax=(top_left_x + square_size, top_left_y + square_size), 
+                    fill= color, tag= "tempRect", parent= "board_squares")
 
-        dpg.delete_item("tempRect")
-        if(valid_move):
-            top_left_x = int(relative_pos[0] / square_size) * square_size
-            top_left_y = int(relative_pos[1] / square_size) * square_size
-            dpg.draw_rectangle(
-                pmin=(top_left_x, top_left_y), 
-                pmax=(top_left_x + square_size, top_left_y + square_size), 
-                fill= color, tag= "tempRect", parent= "board_squares")
+            draw_pieces()
 
-        draw_pieces()
+# reset board to start
+def board_start():
 
-
+    engine.reset_board()
+    update_chess_moves()
+    draw_pieces()
 
 # Function to update the displayed moves in the scrollable text
 def update_chess_moves():
     # Clear previous content in the child window and add updated moves
     dpg.delete_item("moves_holder") 
     
+    moves_number = len(engine.chess_moves)
     with dpg.group(tag="moves_holder", parent= "notation"):
-        for m in range(0, len(chess_moves) - 2, 2):
-            dpg.add_text(str(m // 2 + 1) + ") " + chess_moves[m] + "\t" + chess_moves[m + 1] + "\n")
+        for m in range(0, moves_number - 2, 2):
+            dpg.add_text(str(m // 2 + 1) + ") " + engine.chess_moves[m] + "\t" + engine.chess_moves[m + 1] + "\n")
         
-        if(len(chess_moves) % 2):
-            dpg.add_text(str(len(chess_moves) // 2 + 1) + ") " + chess_moves[len(chess_moves) - 1] + "\t\n")
+        if(moves_number % 2):
+            dpg.add_text(str(moves_number // 2 + 1) + ") " + engine.chess_moves[moves_number - 1] + "\t\n")
+        elif(moves_number > 0):
+            dpg.add_text(str(moves_number // 2) + ") " + engine.chess_moves[moves_number - 2] + "\t" + engine.chess_moves[moves_number - 1] + "\n")
         else:
-            dpg.add_text(str(len(chess_moves) // 2) + ") " + chess_moves[len(chess_moves) - 2] + "\t" + chess_moves[len(chess_moves) - 1] + "\n")
+            dpg.add_text("No moves\tNo moves", parent= "moves_holder")
 
 def convert_symbol(symb: str):
     name = ""
@@ -242,7 +302,11 @@ def create_window():
 
         with dpg.group(tag = "board_buttons", horizontal= True):
             dpg.add_button(label="Flip Board", callback= board_flipper)
-            dpg.add_button(label="New Board")
+            dpg.add_button(label="New Board", callback= board_start)
+
+    # Set a handler for mouse clicks
+    with dpg.handler_registry():
+        dpg.add_mouse_click_handler(callback=mouse_clicked, user_data="board_Window")
 
     with dpg.window(label="notation window", tag="notation_Window", pos= (int(screenWidth * r1), 0), no_resize= True,
                     no_collapse= True, no_close= True, no_move= True,
@@ -253,10 +317,6 @@ def create_window():
             dpg.add_text("  WHITE\tBLACK\n")
             dpg.add_text("No moves\tNo moves", tag = "moves_holder", parent= "notation")
 
-    # Set a handler for mouse clicks
-    with dpg.handler_registry():
-        dpg.add_mouse_click_handler(callback=get_mouse_click_position, user_data="board_Window")
-
     with dpg.window(label="engine window", tag="engine_Window", pos= (int(screenWidth * (r1 + r2 - r1 * r2)), 0), no_resize= True,
                         no_collapse= True, no_close= True, no_move= True,
                         width = int(screenWidth * (1 - r1) * (1 - r2)), height= int(screenHeight * r3)):
@@ -265,7 +325,10 @@ def create_window():
     with dpg.window(label="evaluation window", tag="evaluation_Window", pos= (int(screenWidth * r1), int(screenHeight * r3)), no_resize= True,
                     no_collapse= True, no_close= True, no_move= True,
                     width = int(screenWidth * (1 - r1)), height= int(screenWidth * (1 - r3))):
-        pass
+        
+        with dpg.group(tag = "evaluation_buttons", horizontal= True):
+            dpg.add_button(label="||")
+            dpg.add_button(label="|>")
 
 # Initialize Dear PyGui
 dpg.create_context()
