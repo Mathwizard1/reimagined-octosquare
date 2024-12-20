@@ -2,13 +2,14 @@ import dearpygui.dearpygui as dpg
 import os
 
 import chess
-from myEngine import myEngine
+from myengine import myEngine
 
 import piece_slicer as p_slice
 
 if not os.path.exists(p_slice.directory):
     os.makedirs(p_slice.directory, exist_ok=True)  # exist_ok=True will not raise an error if the directory already exists
     p_slice.slice_pieces()
+
 
 #screen setting
 screenWidth, screenHeight = 1280, 720
@@ -38,7 +39,8 @@ hold_piece = ""
 # small offset
 ofs = 10
 
-# engine
+# engines
+#engine1, engine2 = None, None
 engine = myEngine()
 
 # Function to load an image as a texture and store it in the dictionary
@@ -66,9 +68,6 @@ def mouse_clicked(sender, app_data, user_data):
     # Check if the click happened inside the window
     if (window_pos[0] <= mouse_pos[0] <= window_pos[0] + window_size[0] and 
        window_pos[1] <= mouse_pos[1] <= window_pos[1] + window_size[1]):
-        
-        #print(window_pos[0], mouse_pos[0], window_size[0])
-        #print(window_pos[1], mouse_pos[1], window_size[1])
 
         # Calculate the relative mouse position inside the window
         relative_pos = (mouse_pos[0] - window_pos[0], mouse_pos[1] - window_pos[1])
@@ -142,12 +141,11 @@ def mouse_clicked(sender, app_data, user_data):
                     #print(click_num)
 
                     try:
-                        input_move = engine.board.parse_san(current_notation) #[1:] if(not_pawn) else current_notation)
+                        input_move = engine.board.parse_san(current_notation)
                         
                         #print("valid")
 
                         engine.move(input_move)
-                        engine.chess_moves.append(current_notation)
 
                         color = (0, 255, 0)
 
@@ -181,16 +179,44 @@ def mouse_clicked(sender, app_data, user_data):
 
 # reset board to start
 def board_start():
+    global click_num, current_notation, hold_piece
+    click_num = 0
+    hold_piece = ""
+    current_notation = ""
+    
+    dpg.delete_item("tempRect")
+    dpg.delete_item("promotion_pieces")
 
     engine.reset_board()
     update_chess_moves()
     draw_pieces()
 
+def engine_random():
+    engine.random_move()
+    update_chess_moves()
+    draw_pieces()
+
+def engine_auto():
+    engine.autoplay()
+    update_chess_moves()
+
+def engine_automove():
+    if(engine.enabled):
+        engine.best_move()
+        update_chess_moves()
+        draw_pieces()
+
+    dpg.delete_item("over")
+    if(engine.game_result != None):
+        dpg.add_text(engine.game_result, tag= "over", parent= "evaluation_Window")
+
 # Function to update the displayed moves in the scrollable text
 def update_chess_moves():
     # Clear previous content in the child window and add updated moves
     dpg.delete_item("moves_holder") 
-    
+    dpg.delete_item("to_move_holder")
+    dpg.delete_item("autoplay")
+
     moves_number = len(engine.chess_moves)
     with dpg.group(tag="moves_holder", parent= "notation"):
         for m in range(0, moves_number - 2, 2):
@@ -202,6 +228,14 @@ def update_chess_moves():
             dpg.add_text(str(moves_number // 2) + ") " + engine.chess_moves[moves_number - 2] + "\t" + engine.chess_moves[moves_number - 1] + "\n")
         else:
             dpg.add_text("No moves\tNo moves", parent= "moves_holder")
+
+    if(engine.white_move):
+        dpg.add_text("WHITE to move", tag= "to_move_holder", parent= "notation_Window")
+    else:
+        dpg.add_text("BLACK to move", tag= "to_move_holder", parent= "notation_Window")
+
+    if(engine.enabled):
+        dpg.add_text("Autoplay On", tag= "autoplay", parent= "notation_Window")
 
 def convert_symbol(symb: str):
     name = ""
@@ -266,7 +300,6 @@ def draw_pieces():
                         width, height = chess_pieces[tag]
                         dpg.draw_image(tag, [square_size * file, square_size * rank], [square_size * file + int(width * piece_scale), square_size * rank + int(height * piece_scale)], parent= "piece_position")
 
-
 # Create a resizable window
 def create_window():
     with dpg.window(label="board window", tag="board_Window", pos= (0, 0), no_resize= True,
@@ -312,10 +345,12 @@ def create_window():
                     no_collapse= True, no_close= True, no_move= True,
                     width = int(screenWidth * (1 - r1) * r2), height= int(screenHeight * r3)):
         # Create a scrollable child window to display the moves
-        with dpg.child_window(width = int(screenWidth * (1 - r1) * (r2 - 0.03)), border=True, tag= "notation"):
+        with dpg.child_window(width = int(screenWidth * (1 - r1) * (r2 - 0.03)), height= int(screenHeight * (r3 - 0.1)) , 
+                              border=True, tag= "notation"):
             # Display the formatted chess moves
-            dpg.add_text("  WHITE\tBLACK\n")
+            dpg.add_text("  WHITE\tBLACK\n", parent= "notation")
             dpg.add_text("No moves\tNo moves", tag = "moves_holder", parent= "notation")
+            dpg.add_text("WHITE to move", tag= "to_move_holder", parent= "notation_Window")
 
     with dpg.window(label="engine window", tag="engine_Window", pos= (int(screenWidth * (r1 + r2 - r1 * r2)), 0), no_resize= True,
                         no_collapse= True, no_close= True, no_move= True,
@@ -327,8 +362,9 @@ def create_window():
                     width = int(screenWidth * (1 - r1)), height= int(screenWidth * (1 - r3))):
         
         with dpg.group(tag = "evaluation_buttons", horizontal= True):
-            dpg.add_button(label="||")
-            dpg.add_button(label="|>")
+            dpg.add_button(label= "random_move", callback= engine_random)
+            dpg.add_button(label="|>", callback= engine_auto)
+            dpg.add_button(label="analyse")
 
 # Initialize Dear PyGui
 dpg.create_context()
@@ -350,7 +386,18 @@ dpg.create_viewport(title="chess", width= screenWidth, height= screenHeight,
 # Setup and start the Dear PyGui rendering loop
 dpg.setup_dearpygui()
 dpg.show_viewport()
-dpg.start_dearpygui()
+
+#dpg.start_dearpygui()      # below replaces
+while dpg.is_dearpygui_running():
+    # insert here any code you would like to run in the render loop
+
+    engine_automove()
+
+
+    # you can manually stop by using stop_dearpygui()
+    #print("this will run every frame")
+    dpg.render_dearpygui_frame()
+
 
 # Cleanup Dear PyGui context after use
 dpg.destroy_context()
