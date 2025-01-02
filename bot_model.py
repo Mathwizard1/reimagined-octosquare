@@ -1,41 +1,47 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
 import numpy as np
 
+import threading
+import csv
+
 from Chessnut import Game
-import random
 
-def simple_bot(fen):
-    """
-    Simple chess bot that prioritizes checkmates, then captures, queen promotions, then randomly moves.
+weight_directory = "weights\\"
 
-    Args:
-        fen: An object with a 'board' attribute representing the current board state as a FEN string.
+class evaluator():
+    def __init__(self, weights_path):
+        
 
-    Returns:
-        A string representing the chosen move in UCI notation (e.g., "e2e4")
-    """
-    # 0. Parse the current board state and generate legal moves using Chessnut library
-    game = Game(fen)
-    moves = list(game.get_moves())
+        pass
 
-    # 1. Check a subset of moves for checkmate
-    for move in moves[:10]:
-        g = Game(fen)
-        g.apply_move(move)
-        if g.status == Game.CHECKMATE:
-            return move
+    def game_evaluation(self, game):
 
-    # 2. Check for captures
-    for move in moves:
-        if game.board.get_piece(Game.xy2i(move[2:4])) != ' ':
-            return move
 
-    # 3. Check for queen promotions
-    for move in moves:
-        if "q" in move.lower():
-            return move
+        pass
 
-    # 4. Random move if no checkmates or captures
-    return random.choice(moves)
+class bots():
+    def __init__(self, name = "", weights= ""):
+
+        if(name in dir(bots) and "_bot" in name):
+            self.instanced_bot = getattr(bots, name)
+        else:
+            self.instanced_bot = getattr(bots, "simple_bot")
+
+    def active_Bot(self, fen, timer):
+        game = Game(fen)
+        result = None
+
+        #self.instanced_bot(game)
+
+        return result
+
+    def simple_bot(self, game, eval = 0):
+        pass
+
+    def intui_bot(self, game, eval = 0):
+        pass
+
+#bots()

@@ -4,13 +4,13 @@ import random as rd
 import bot_model as bm
 
 class myEngine():
-    def __init__(self, name =""):
-        self.name = name
+    def __init__(self, name ="simple_bot", weights= ""):
+        self.bot = bm.bots(name, weights)
+
         self.board = chess.Board()
         self.chess_moves = []
         self.white_move = True
 
-        self.loaded_data = False
         self.enabled = False
 
         self.game_result = None
@@ -19,13 +19,15 @@ class myEngine():
 
     def check_game(self):
         if(self.board.is_fivefold_repetition() or self.board.is_insufficient_material() or self.board.is_stalemate()):
-            self.game_result = "draw"
+            self.game_result = "draw (0.5 : 0.5)"
+            self.enabled = False
 
         if(self.board.is_checkmate()):
             if(self.board.turn == chess.WHITE):
-                self.game_result = "Black won"
+                self.game_result = "Black won (0 : 1)"
             elif(self.board.turn == chess.BLACK):
-                self.game_result = "White won"       
+                self.game_result = "White won (1 : 0)"
+            self.enabled = False      
 
     def reset_board(self):
         self.board.reset()
@@ -38,32 +40,45 @@ class myEngine():
 
     def move(self, move: chess.Move):
         self.board.push(move)
-        self.chess_moves.append(move.uci)
+        self.chess_moves.append(move.uci())
 
         self.white_move = not self.white_move
+        self.check_game()
+
+    def setup_board(self, fen):
+        self.enabled = False
+        board = chess.Board()
+
+        try:
+            board.set_fen(fen)
+            
+            self.white_move = True if(board.turn == chess.WHITE) else False
+            self.board = board
+            self.chess_moves.clear()
+        except:
+            pass
+
         self.check_game()
 
     def autoplay(self):
         self.engine_white = self.white_move
         self.enabled = not self.enabled
 
-    def evaluate(self, timer):
-        if(self.name == ""):
-            return bm.simple_bot(self.board.fen())
+    def get_move(self, timer):
+        return self.bot.active_Bot(self.board.fen(), timer)
 
-    def best_move(self, timer = None):
+    def best_move(self, timer = 0):
         self.check_game()
 
         if(self.game_result != None):
-            self.enabled = not self.enabled
             return
 
         if(self.engine_white and self.white_move):
-            move = self.evaluate(timer)
-            self.move(self.board.parse_san(move), move)
+            move = self.get_move(timer)
+            self.move(self.board.parse_san(move))
         elif not (self.engine_white or self.white_move):
-            move = self.evaluate(timer)
-            self.move(self.board.parse_san(move), move)
+            move = self.get_move(timer)
+            self.move(self.board.parse_san(move))
             
     def random_move(self):
         self.check_game()
@@ -72,7 +87,7 @@ class myEngine():
             return
 
         move = rd.choice(list(self.board.generate_legal_moves()))
-        self.move(move, move.uci())
+        self.move(move)
 
 
 # engine
