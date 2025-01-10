@@ -4,8 +4,8 @@ import random as rd
 import bot_model as bm
 
 class myEngine():
-    def __init__(self, name ="simple_bot", weights= ""):
-        self.bot = bm.bots(name, weights)
+    def __init__(self, name ="simple_bot"):
+        self.bot = bm.bots(name)
 
         self.board = chess.Board()
         self.chess_moves = []
