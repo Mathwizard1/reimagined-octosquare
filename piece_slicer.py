@@ -8,6 +8,7 @@ piece_grid_height = 2  # 2 rows for white and black pieces
 # Board Colors
 white_color = (255, 255, 255, 255)  # RGBA for white squares
 brown_color = (150, 75, 0, 255)        # RGBA for black squares
+#brown_color = (0, 0, 0, 255)
 
 # Size and layout for the pieces in the sprite sheet (assuming 6x2 grid of pieces)
 piece_width = 120

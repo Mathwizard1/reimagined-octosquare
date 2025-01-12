@@ -42,8 +42,8 @@ ofs = 10
 # engines
 engine = myEngine()
 
-def bot_selection():
-    print("bot selection Needs work")
+def bot_selection(sender):
+    print(f"{sender} bot selection Needs work")
 
 # Function to load an image as a texture and store it in the dictionary
 def load_image_as_texture(image_path, tag):
@@ -212,7 +212,7 @@ def engine_auto():
 
 def engine_automove():
     if(engine.enabled):
-        user_input = dpg.get_value("eng_timer")
+        user_input = dpg.get_value("eng_timer1")
         #print(f"timer: {user_input}")
 
         engine.best_move(user_input)
@@ -371,11 +371,17 @@ def create_window():
                     no_resize= True, no_collapse= True, no_close= True, no_move= True,
                     width = int(screenWidth * (1 - r1) * (1 - r2)), height= int(screenHeight * r3)):
         
-        dpg.add_button(label= "Select Bot", callback= bot_selection)
-        
-        dpg.add_text("\n\nEngine parameter:\n")
-        # Add an integer slider for timer
-        dpg.add_slider_int(label="(secs) process", tag= "eng_timer", default_value=10, min_value=10, max_value=120)
+        with dpg.group(tag= "engine1_param"):
+            dpg.add_text("Engine 1 parameter (White / autoplay):")
+            dpg.add_button(label= "Select Bot", tag= 'engine1', callback= bot_selection)
+            # Add an integer slider for timer
+            dpg.add_slider_int(label="(secs) process", tag= "eng_timer1", default_value=10, min_value=10, max_value=120)
+
+        with dpg.group(tag= "engine2_param", pos= (0, int(screenHeight * r3 / 2))):
+            dpg.add_text("Engine 2 parameter (Black):")
+            dpg.add_button(label= "Select Bot", tag= 'engine2', callback= bot_selection)
+            # Add an integer slider for timer
+            dpg.add_slider_int(label="(secs) process", tag= "eng_timer2", default_value=10, min_value=10, max_value=120)
 
 
     with dpg.window(label="evaluation window", tag="evaluation_Window", pos= (int(screenWidth * r1), int(screenHeight * r3)), 
@@ -383,15 +389,13 @@ def create_window():
                     width = int(screenWidth * (1 - r1)), height= int(screenWidth * (1 - r3))):       
         with dpg.group(tag = "evaluation_buttons", horizontal= True):
             dpg.add_button(label= "random_move", callback= engine_random)
-            dpg.add_button(label="|>", callback= engine_auto)
-            dpg.add_button(label="analyse")
+            dpg.add_button(label= "|>", callback= engine_auto)
+            dpg.add_button(label= "analyse")
 
-
-        dpg.add_text("\n\nPosition:\n")
-        with dpg.group(tag= "position_setup", horizontal= True):
+        with dpg.group(tag = "position_buttons", pos= (ofs, int(screenHeight * r3 / 4))):
+            dpg.add_text("Position:")
+            with dpg.group(tag= "position_setup", horizontal= True):
                 dpg.add_input_text(tag="string_input", hint="fen notation")
-    
-                # Submit button
                 dpg.add_button(label="setup", callback=submit_Fen)
 
 # Initialize Dear PyGui

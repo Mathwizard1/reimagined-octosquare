@@ -8,46 +8,47 @@ from chess import Board
 import pandas as pd
 
 import os.path as path
-from bot_model import evaluator, bitboard_embed
+from bot_model import evaluator, bitboard_embed, limit_val
+
+#############################################################
 
 # loading chess data
-filtered_df = pd.read_csv('data\\random_evals.csv', nrows= 50000)
+filtered_df = pd.read_csv('data\\random_evals.csv')
+
+#############################################################
 
 # Pre processing
+#print(filtered_df.dtypes)
 
 # All checkmate position
-#mask = df['Evaluation'].str.contains('#')
-#filtered_df = df[mask == True]
+mask = filtered_df['Evaluation'].astype(str).str.contains('#', na= False)
+#filtered_df = filtered_df[mask == True]
 
 # Normal position
-#filtered_df = df[mask == False]
+#filtered_df = filtered_df[mask == False]
 
 # All position
-limit_val = 20000
-
-filtered_df.loc[filtered_df['Evaluation'].str.contains('#-'), 'Evaluation'] = str(-1 * limit_val)  
-filtered_df.loc[filtered_df['Evaluation'].str.contains('#+'), 'Evaluation'] = str(limit_val)
+#if(mask.any()):
+    #print("Checkmate positions found")
+filtered_df.loc[filtered_df['Evaluation'].str.contains('#-'), 'Evaluation'] = str(-1 * limit_val * 100)  
+filtered_df.loc[filtered_df['Evaluation'].str.contains('#+'), 'Evaluation'] = str(limit_val * 100)
 
 filtered_df['Evaluation'] = pd.to_numeric(filtered_df['Evaluation'])
 
-print("number of samples:", len(filtered_df))
+#############################################################
+
+# Scaling
+def min_max_Scaling(f = 10):
+    # 0 -> 10
+    filtered_df['Evaluation'] = (
+        filtered_df['Evaluation'] - filtered_df['Evaluation'].min()) / (
+        filtered_df['Evaluation'].max() - filtered_df['Evaluation'].min()
+        ) * f
+
+min_max_Scaling(limit_val * 2)
+#############################################################
 
 board_data, targets = [], []
-
-#### Statistical scaling #####
-
-'''def Robust_Scaling():
-    median = filtered_df['Evaluation'].median()
-    iqr = filtered_df['Evaluation'].quantile(0.75) - filtered_df['Evaluation'].quantile(0.25)
-
-    filtered_df['scaled'] = (filtered_df['Evaluation'] - median) / iqr
-
-def z_score():
-    filtered_df['Evaluation'] = (filtered_df['Evaluation'] - filtered_df['Evaluation'].mean()) / filtered_df['Evaluation'].std()
-'''
-##############################
-
-#z_score()
 
 def game_board(fen):
     game = Board(fen)
@@ -61,6 +62,8 @@ for row in filtered_df.itertuples():
     #print(targets[0])
     #exit()
 
+print("number of samples:", len(filtered_df))
+#############################################################
 
 # Create the dataset using the manually imported lists
 class ManualDataset(Dataset):
@@ -91,17 +94,18 @@ dataset = ManualDataset(board_data, targets)
 # Create a DataLoader for batching
 dataloader = DataLoader(dataset)
 
+#############################################################
+#############################################################
 
-##################################################
-##################################################
-
-###### model parameters ######
+# model parameters
 
 # Set random seed for reproducibility
 seed = 42
 torch.manual_seed(seed)
 
 current_model = "simple_bot"
+
+#############################################################
 
 # Instantiate the model
 model = evaluator(current_model)
@@ -118,11 +122,16 @@ if(path.exists(model.name)):
 #for param in model.parameters():
 #    print(type(param), param.size())
 
+#############################################################
+
 # Loss function and optimizer
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=1.0e-7)
 
-# Training loop
+#############################################################
+
+# Training
+
 # Training function
 def train_model(model : evaluator, dataloader, num_epochs):
     for epoch in range(num_epochs):
@@ -151,8 +160,9 @@ def train_model(model : evaluator, dataloader, num_epochs):
         print(f"Model saved after epoch {epoch+1}")
 
         # Load the model after saving to continue training in the next epoch
-        model.load_state_dict(torch.load(model.name, weights_only= True))
-        print(f"Model loaded for epoch {epoch+1}")
+        if(epoch < num_epochs - 1):
+            model.load_state_dict(torch.load(model.name, weights_only= True))
+            print(f"Model loaded for epoch {epoch+2}")
 
 # Train the model
-train_model(model, dataloader, num_epochs=5)
+train_model(model, dataloader, num_epochs= 1)

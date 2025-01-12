@@ -13,6 +13,9 @@ import regex as re
 
 evaluator_directory = "weights\\evaluator_"
 
+# replace checkmates with huge evals
+limit_val = 200
+
 # same embeddings used for evaluator_train
 def board2d_embed(game: Board):    
     pass
@@ -51,38 +54,48 @@ class evaluator(nn.Module):
         self.instanced_model = nn.Sequential(*temp_model)
 
     def forward(self, x):
+        '''for layer in self.isinstance_model:
+            x = layer(x)
+
+            print(x.shape)
+        return x'''
+
         return self.instanced_model(x)
 
     def simple_bot():
         model_list = (
-            # First convolutional layer: input channels = 6, output channels = 32, kernel size = 3x3
+            # First convolutional layer
             nn.Conv2d(in_channels=6, out_channels=32, kernel_size=3, padding=1),
             nn.Tanh(),
             nn.MaxPool2d(kernel_size=2),  # Downsample by a factor of 2 (8x8 -> 4x4)
             
-            # Second convolutional layer: input channels = 32, output channels = 64, kernel size = 3x3
+            # Second convolutional layer
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
             nn.Tanh(),
             nn.MaxPool2d(kernel_size=2),  # Downsample by a factor of 2 (4x4 -> 2x2)
 
-
-            # Flatten the 2x2x64 output to a 1D vector (64*2*2 = 256)
+            # Flatten the 2x2x64 output to a 1D vector (256)
             nn.Flatten(start_dim= 0),
             
             # Fully connected layer 1
             nn.Linear(256, 128),
-            nn.Tanh(),
-            
+            nn.LeakyReLU(),
+
             # Fully connected layer 2
+            nn.Linear(128, 128),
+            nn.ReLU(),
+
+            # Fully connected layer 3
             nn.Linear(128, 64),
-            nn.Tanh(),
-            
+            nn.ReLU(),
+
             # Output layer (single value for regression)
             nn.Linear(64, 1)
         )
 
         return model_list
     
+    ### NEEDS WORK
     def intui_bot():
         model_list = (
 
@@ -104,11 +117,13 @@ class bots():
         ## choose the right model for the bot to work
         self.evaluator = evaluator(self.instanced_bot.__name__)
         self.evaluator.load_state_dict(
-            torch.load(self.evaluator.name, weights_only= True)
-                                    )
+            torch.load(self.evaluator.name, weights_only= True))
         
-    def move_Reorder(self, game: Board) -> list:
-        pass
+        # Set evaluation mode
+        self.evaluator.eval()
+        
+    #def move_Reorder(self, game: Board) -> list:
+    #    pass
 
     def active_Bot(self, fen, timer = 10) -> chess.Move.uci:
         game = Board(fen)
@@ -120,6 +135,7 @@ class bots():
 
         # Wait for the thread to finish or timeout
         thread.join(timer)
+        print("thread over")
 
         return result['final_move']
 
@@ -132,7 +148,7 @@ class bots():
 
         # checks, captures and promotion
         for move in moves:
-            if(game.is_capture(move) or game.gives_check(move) or move.promotion != None):
+            if(game.gives_check(move) or move.promotion != None):
                 game.push(move)
                 game_eval = self.evaluator(bitboard_embed(game))
                 print(game_eval, move.uci())
@@ -146,7 +162,6 @@ class bots():
                     result['final_move'] = move.uci()
             else:
                 move_reserve.append(move)
-                continue
 
         # other moves
         for move in move_reserve:
@@ -164,5 +179,15 @@ class bots():
 
 
     ### NEEDS WORK
-    def intui_bot(self, game: Board, depth = -1, alpha = -np.inf, beta = np.inf, maximising_player: bool = True, result = {}):
+    def intui_bot(self, game: Board, result = {}):
         pass
+
+if(__name__ == '__main__'):
+    bot_test = bots()
+
+    game = Board()
+
+    move = bot_test.active_Bot(game.board_fen())
+    #game.push_san(move)
+
+    #move = bot_test.active_Bot(game.board_fen())
