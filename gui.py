@@ -317,7 +317,7 @@ def draw_pieces():
 def create_window():
     with dpg.window(label="board window", tag="board_Window", pos= (0, 0), no_resize= True,
                     no_collapse= True, no_close= True, no_move= True,
-                    width = screenWidth * r1, height= screenWidth):
+                    width = screenWidth * r1, height= screenHeight):
         
         with dpg.group(tag= "board_display"):
             with dpg.drawlist(width=board_width, height=board_height, tag= "board_squares"):

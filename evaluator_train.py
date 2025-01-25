@@ -8,12 +8,12 @@ from chess import Board
 import pandas as pd
 
 import os.path as path
-from bot_model import evaluator, bitboard_embed, limit_val
+from bot_model import evaluator, bitboard_embed, board2d_embed, limit_val
 
 #############################################################
 
 # loading chess data
-filtered_df = pd.read_csv('data\\random_evals.csv')
+filtered_df = pd.read_csv('data\\random_evals.csv', nrows= 10000)
 
 #############################################################
 
@@ -21,7 +21,7 @@ filtered_df = pd.read_csv('data\\random_evals.csv')
 #print(filtered_df.dtypes)
 
 # All checkmate position
-mask = filtered_df['Evaluation'].astype(str).str.contains('#', na= False)
+#mask = filtered_df['Evaluation'].astype(str).str.contains('#', na= False)
 #filtered_df = filtered_df[mask == True]
 
 # Normal position
@@ -50,9 +50,12 @@ min_max_Scaling(limit_val * 2)
 
 board_data, targets = [], []
 
-def game_board(fen):
+def game_board(fen, bit_embed = True):
     game = Board(fen)
-    return bitboard_embed(game)
+    if(bit_embed):
+        return bitboard_embed(game)
+    else:
+        return board2d_embed(game)
 
 for row in filtered_df.itertuples():
     board_data.append(game_board(row.FEN))
@@ -103,7 +106,7 @@ dataloader = DataLoader(dataset)
 seed = 42
 torch.manual_seed(seed)
 
-current_model = "simple_bot"
+current_model = "intui_bot"
 
 #############################################################
 
@@ -126,7 +129,7 @@ if(path.exists(model.name)):
 
 # Loss function and optimizer
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=1.0e-7)
+optimizer = optim.Adam(model.parameters(), lr=1.0e-6)
 
 #############################################################
 
@@ -165,4 +168,4 @@ def train_model(model : evaluator, dataloader, num_epochs):
             print(f"Model loaded for epoch {epoch+2}")
 
 # Train the model
-train_model(model, dataloader, num_epochs= 1)
+train_model(model, dataloader, num_epochs= 2)

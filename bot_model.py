@@ -3,12 +3,9 @@ import torch.nn as nn
 
 import numpy as np
 
-import threading
-
 import chess
 from chess import Board
 
-import heapq
 import regex as re
 
 evaluator_directory = "weights\\evaluator_"
@@ -18,7 +15,27 @@ limit_val = 200
 
 # same embeddings used for evaluator_train
 def board2d_embed(game: Board):    
-    pass
+    symb_map = {
+        'k': 10,
+        'q': 9,
+        'r': 5,
+        'b': 3.1,
+        'n': 2.9,
+        'p': 1
+    }
+
+    Board = []
+    for square in chess.SquareSet:
+        piece = game.piece_at(square)
+
+        if(piece != None):
+            symb = piece.symbol()
+            val= 1 if(symb.isupper()) else -1
+            Board.append(symb_map[symb.lower()] * val)
+        else:
+            Board.append(0)
+    board_embed = np.array(Board).reshape(8,8)
+    return torch.tensor(board_embed, dtype= torch.float32)
 
 # citation: https://www.youtube.com/watch?v=aOwvRvTPQrs
 def bitboard_embed(game: Board):
@@ -30,7 +47,7 @@ def bitboard_embed(game: Board):
         b = re.sub(f'[^{piece}{piece.upper()} \n]','.', b)
         b = re.sub(f'{piece}', '-1', b) 
         b = re.sub(f'{piece.upper()}', '1', b)
-        b = re.sub(f'\.', '0', b)
+        b = re.sub(r'\.', '0', b)
 
         board = []
         for row in b.split('\n'):
@@ -42,6 +59,17 @@ def bitboard_embed(game: Board):
 
     board_embed = np.stack(layers)
     return torch.tensor(board_embed, dtype= torch.float32)
+
+# Special attention block to be used inside the sequential
+class AttentionBlock(nn.Module):
+    def __init__(self, embed_dim, num_heads):
+        super(AttentionBlock, self).__init__()
+        self.attention = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads)
+
+    def forward(self, x):
+        # Apply multi-head attention
+        attn_output, _ = self.attention(x, x, x)
+        return attn_output
 
 # evaluator class for positions
 class evaluator(nn.Module):
@@ -66,12 +94,10 @@ class evaluator(nn.Module):
         model_list = (
             # First convolutional layer
             nn.Conv2d(in_channels=6, out_channels=32, kernel_size=3, padding=1),
-            nn.Tanh(),
             nn.MaxPool2d(kernel_size=2),  # Downsample by a factor of 2 (8x8 -> 4x4)
             
             # Second convolutional layer
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
-            nn.Tanh(),
             nn.MaxPool2d(kernel_size=2),  # Downsample by a factor of 2 (4x4 -> 2x2)
 
             # Flatten the 2x2x64 output to a 1D vector (256)
@@ -79,11 +105,11 @@ class evaluator(nn.Module):
             
             # Fully connected layer 1
             nn.Linear(256, 128),
-            nn.LeakyReLU(),
+            nn.LeakyReLU(negative_slope= 0.1),
 
             # Fully connected layer 2
             nn.Linear(128, 128),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope= 0.1),
 
             # Fully connected layer 3
             nn.Linear(128, 64),
@@ -97,8 +123,25 @@ class evaluator(nn.Module):
     
     ### NEEDS WORK
     def intui_bot():
-        model_list = (
+        embed_dim = 64
+        num_heads= 4
 
+        model_list = (
+            nn.Linear(8 * 8, embed_dim),  # Embedding layer for input (8x8)
+            AttentionBlock(embed_dim=embed_dim, num_heads=num_heads),  # Attention layer as a block
+
+            nn.Flatten(start_dim= 1),  # Flatten attention output
+
+            nn.Linear(embed_dim * 8 * 8, 128),  # Fully connected layers
+            nn.LeakyReLU(negative_slope= 0.1),
+
+            nn.Linear(128, 128),
+            nn.LeakyReLU(negative_slope= 0.1),
+
+            nn.Linear(128, 64),
+            nn.LeakyReLU(negative_slope= 0.1),
+
+            nn.Linear(64, 1)  # Output layer for regression
         )
 
         return model_list
@@ -129,13 +172,7 @@ class bots():
         game = Board(fen)
         result = {'final_move' : None}
 
-        # Start the thread
-        thread = threading.Thread(target= self.instanced_bot, kwargs={'self': self,'game': game, 'result': result}, daemon= True)
-        thread.start()
-
-        # Wait for the thread to finish or timeout
-        thread.join(timer)
-        print("thread over")
+        self.instanced_bot(game, result)
 
         return result['final_move']
 
@@ -180,7 +217,42 @@ class bots():
 
     ### NEEDS WORK
     def intui_bot(self, game: Board, result = {}):
-        pass
+        moves = list(game.generate_legal_moves())
+        move_reserve = []
+
+        white_move = True if(game.turn == chess.WHITE) else False
+        move_eval = -np.inf if(game.turn == chess.WHITE) else np.inf
+
+        # checks, captures and promotion
+        for move in moves:
+            if(game.gives_check(move) or move.promotion != None):
+                game.push(move)
+                game_eval = self.evaluator(bitboard_embed(game))
+                print(game_eval, move.uci())
+                game.pop()
+
+                if(white_move and game_eval > move_eval):
+                    move_eval = game_eval
+                    result['final_move'] = move.uci()
+                elif(not white_move and game_eval < move_eval):
+                    move_eval = game_eval
+                    result['final_move'] = move.uci()
+            else:
+                move_reserve.append(move)
+
+        # other moves
+        for move in move_reserve:
+            game.push(move)
+            game_eval = self.evaluator(bitboard_embed(game))
+            print(game_eval, move.uci())
+            game.pop()
+
+            if(white_move and game_eval > move_eval):
+                move_eval = game_eval
+                result['final_move'] = move.uci()
+            elif(not white_move and game_eval < move_eval):
+                move_eval = game_eval
+                result['final_move'] = move.uci()
 
 if(__name__ == '__main__'):
     bot_test = bots()
