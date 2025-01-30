@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 import numpy as np
+import numpy.random as rd
 
 import chess
 from chess import Board
@@ -60,17 +61,6 @@ def bitboard_embed(game: Board):
     board_embed = np.stack(layers)
     return torch.tensor(board_embed, dtype= torch.float32)
 
-# Special attention block to be used inside the sequential
-class AttentionBlock(nn.Module):
-    def __init__(self, embed_dim, num_heads):
-        super(AttentionBlock, self).__init__()
-        self.attention = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads)
-
-    def forward(self, x):
-        # Apply multi-head attention
-        attn_output, _ = self.attention(x, x, x)
-        return attn_output
-
 # evaluator class for positions
 class evaluator(nn.Module):
     def __init__(self, name):
@@ -82,9 +72,8 @@ class evaluator(nn.Module):
         self.instanced_model = nn.Sequential(*temp_model)
 
     def forward(self, x):
-        '''for layer in self.isinstance_model:
+        '''for layer in self.instanced_model:
             x = layer(x)
-
             print(x.shape)
         return x'''
 
@@ -100,11 +89,16 @@ class evaluator(nn.Module):
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
             nn.MaxPool2d(kernel_size=2),  # Downsample by a factor of 2 (4x4 -> 2x2)
 
-            # Flatten the 2x2x64 output to a 1D vector (256)
-            nn.Flatten(start_dim= 0),
+            # Third convolutional layer
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1),
+            nn.Tanh(),
+            nn.MaxPool2d(kernel_size=2),  # Downsample by a factor of 2 (1x1 -> 1x1)
+
+            # Flatten the 1x1x128 output to a 1D vector (128)
+            nn.Flatten(),
             
             # Fully connected layer 1
-            nn.Linear(256, 128),
+            nn.Linear(128, 128),
             nn.LeakyReLU(negative_slope= 0.1),
 
             # Fully connected layer 2
@@ -127,32 +121,18 @@ class evaluator(nn.Module):
         num_heads= 4
 
         model_list = (
-            nn.Linear(8 * 8, embed_dim),  # Embedding layer for input (8x8)
-            AttentionBlock(embed_dim=embed_dim, num_heads=num_heads),  # Attention layer as a block
-
-            nn.Flatten(start_dim= 1),  # Flatten attention output
-
-            nn.Linear(embed_dim * 8 * 8, 128),  # Fully connected layers
-            nn.LeakyReLU(negative_slope= 0.1),
-
-            nn.Linear(128, 128),
-            nn.LeakyReLU(negative_slope= 0.1),
-
-            nn.Linear(128, 64),
-            nn.LeakyReLU(negative_slope= 0.1),
-
-            nn.Linear(64, 1)  # Output layer for regression
         )
 
         return model_list
 
 class bots():
-    def __init__(self, name = ""):
+    def __init__(self, name = "simple_bot"):
         if(name in dir(bots) and "_bot" in name):
             self.instanced_bot = getattr(bots, name)
         else:
             self.instanced_bot = getattr(bots, "simple_bot")
 
+        #self.transpositionTable = {}
         self.evaluator = None
         self.load_evaluator()
 
@@ -170,96 +150,45 @@ class bots():
 
     def active_Bot(self, fen, timer = 10) -> chess.Move.uci:
         game = Board(fen)
-        result = {'final_move' : None}
+        #self.transpositionTable.clear()
 
-        self.instanced_bot(game, result)
+        return self.instanced_bot(self, game).uci()
 
-        return result['final_move']
-
-    def simple_bot(self, game: Board, result = {}):
+    def simple_bot(self, game: Board) -> chess.Move:        
         moves = list(game.generate_legal_moves())
-        move_reserve = []
 
-        white_move = True if(game.turn == chess.WHITE) else False
-        move_eval = -np.inf if(game.turn == chess.WHITE) else np.inf
+        num_moves = len(moves)
+        prob = np.zeros(num_moves, dtype= np.float32)
 
-        # checks, captures and promotion
-        for move in moves:
-            if(game.gives_check(move) or move.promotion != None):
-                game.push(move)
-                game_eval = self.evaluator(bitboard_embed(game))
-                print(game_eval, move.uci())
-                game.pop()
-
-                if(white_move and game_eval > move_eval):
-                    move_eval = game_eval
-                    result['final_move'] = move.uci()
-                elif(not white_move and game_eval < move_eval):
-                    move_eval = game_eval
-                    result['final_move'] = move.uci()
-            else:
-                move_reserve.append(move)
-
-        # other moves
-        for move in move_reserve:
-            game.push(move)
-            game_eval = self.evaluator(bitboard_embed(game))
-            print(game_eval, move.uci())
+        for i in range(num_moves):
+            game.push(moves[i])
+            game_eval = self.evaluator(bitboard_embed(game).unsqueeze(0))
+            #print(game_eval, moves[i].uci())
             game.pop()
 
-            if(white_move and game_eval > move_eval):
-                move_eval = game_eval
-                result['final_move'] = move.uci()
-            elif(not white_move and game_eval < move_eval):
-                move_eval = game_eval
-                result['final_move'] = move.uci()
+            prob[i] = game_eval
 
+        if(game.turn == chess.BLACK):
+            prob = (prob.sum() - prob)
+
+        prob = prob / prob.sum()
+        return rd.choice(moves, p = prob)
 
     ### NEEDS WORK
     def intui_bot(self, game: Board, result = {}):
-        moves = list(game.generate_legal_moves())
-        move_reserve = []
-
-        white_move = True if(game.turn == chess.WHITE) else False
-        move_eval = -np.inf if(game.turn == chess.WHITE) else np.inf
-
-        # checks, captures and promotion
-        for move in moves:
-            if(game.gives_check(move) or move.promotion != None):
-                game.push(move)
-                game_eval = self.evaluator(bitboard_embed(game))
-                print(game_eval, move.uci())
-                game.pop()
-
-                if(white_move and game_eval > move_eval):
-                    move_eval = game_eval
-                    result['final_move'] = move.uci()
-                elif(not white_move and game_eval < move_eval):
-                    move_eval = game_eval
-                    result['final_move'] = move.uci()
-            else:
-                move_reserve.append(move)
-
-        # other moves
-        for move in move_reserve:
-            game.push(move)
-            game_eval = self.evaluator(bitboard_embed(game))
-            print(game_eval, move.uci())
-            game.pop()
-
-            if(white_move and game_eval > move_eval):
-                move_eval = game_eval
-                result['final_move'] = move.uci()
-            elif(not white_move and game_eval < move_eval):
-                move_eval = game_eval
-                result['final_move'] = move.uci()
+        pass
 
 if(__name__ == '__main__'):
     bot_test = bots()
 
     game = Board()
 
-    move = bot_test.active_Bot(game.board_fen())
-    #game.push_san(move)
+    #print(bitboard_embed(game).unsqueeze(0).shape)
 
-    #move = bot_test.active_Bot(game.board_fen())
+    move = bot_test.active_Bot(game.board_fen())
+    print(move)
+    game.push_san(move)
+    move = None
+
+    move = bot_test.active_Bot(game.board_fen())
+    print(move)

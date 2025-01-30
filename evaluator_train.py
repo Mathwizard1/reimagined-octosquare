@@ -11,9 +11,24 @@ import os.path as path
 from bot_model import evaluator, bitboard_embed, board2d_embed, limit_val
 
 #############################################################
+# Basic parameters
+num_rows = 200000    # num of rows to load from dataset
+
+pre_trained = True  # to use previously trained model or not
+seed = 42        # int only
+
+batch_size = 4 
+alpha_lr = 1.0e-7   # learning rate of optimiser
+tr_epochs = 2       # num of epochs
+
+bit_embed = True    # to use chess bit board embed (8x8x6) or 2d embed (8x8)
+current_model = "simple_bot" # bit embed depends on model
+
+equal_positions = True
+#############################################################
 
 # loading chess data
-filtered_df = pd.read_csv('data\\random_evals.csv', nrows= 10000)
+filtered_df = pd.read_csv('data\\random_evals.csv', nrows= num_rows)
 
 #############################################################
 
@@ -35,6 +50,9 @@ filtered_df.loc[filtered_df['Evaluation'].str.contains('#+'), 'Evaluation'] = st
 
 filtered_df['Evaluation'] = pd.to_numeric(filtered_df['Evaluation'])
 
+if(equal_positions):
+    filtered_df.query(f'{filtered_df["Evaluation"].mean() - filtered_df["Evaluation"].std()} <= Evaluation <= {filtered_df["Evaluation"].mean() + filtered_df["Evaluation"].std()}', inplace= True)
+
 #############################################################
 
 # Scaling
@@ -50,16 +68,16 @@ min_max_Scaling(limit_val * 2)
 
 board_data, targets = [], []
 
-def game_board(fen, bit_embed = True):
+def game_board(fen, curr_bit_embed = True):
     game = Board(fen)
-    if(bit_embed):
+    if(curr_bit_embed):
         return bitboard_embed(game)
     else:
         return board2d_embed(game)
 
 for row in filtered_df.itertuples():
-    board_data.append(game_board(row.FEN))
-    targets.append(row.Evaluation)
+    board_data.append(game_board(row.FEN, bit_embed))
+    targets.append([row.Evaluation])
 
     #print(board_data[0], len(board_data[0]))
     #print(targets[0])
@@ -95,18 +113,14 @@ class ManualDataset(Dataset):
 dataset = ManualDataset(board_data, targets)
 
 # Create a DataLoader for batching
-dataloader = DataLoader(dataset)
+dataloader = DataLoader(dataset, batch_size= batch_size)
 
-#############################################################
 #############################################################
 
 # model parameters
 
 # Set random seed for reproducibility
-seed = 42
 torch.manual_seed(seed)
-
-current_model = "intui_bot"
 
 #############################################################
 
@@ -118,7 +132,7 @@ def load_pre_train():
     global model
     model.load_state_dict(torch.load(model.name, weights_only= True))
 
-if(path.exists(model.name)):
+if(pre_trained and path.exists(model.name)):
     print(model.name,"loaded")
     load_pre_train()
 
@@ -129,7 +143,7 @@ if(path.exists(model.name)):
 
 # Loss function and optimizer
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=1.0e-6)
+optimizer = optim.Adam(model.parameters(), lr= alpha_lr)
 
 #############################################################
 
@@ -168,4 +182,4 @@ def train_model(model : evaluator, dataloader, num_epochs):
             print(f"Model loaded for epoch {epoch+2}")
 
 # Train the model
-train_model(model, dataloader, num_epochs= 2)
+train_model(model, dataloader, num_epochs= tr_epochs)
