@@ -17,7 +17,7 @@ This project is a development environment for creating, testing, and comparing s
 
 ### Installation
 - Clone the repository:
-git clone [reimagined-octosquare](https://github.com/Mathwizard1/reimagined-octosquare.git)
+git clone https://github.com/Mathwizard1/reimagined-octosquare.git
 
 - Install dependencies:
 pip install -r requirements.txt
