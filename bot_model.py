@@ -100,10 +100,12 @@ class evaluator(nn.Module):
             # Fully connected layer 1
             nn.Linear(128, 128),
             nn.LeakyReLU(negative_slope= 0.1),
+            nn.Dropout(p = 0.2),
 
             # Fully connected layer 2
             nn.Linear(128, 128),
             nn.LeakyReLU(negative_slope= 0.1),
+            nn.Dropout(p = 0.2),
 
             # Fully connected layer 3
             nn.Linear(128, 64),
