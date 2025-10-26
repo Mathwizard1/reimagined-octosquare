@@ -1,0 +1,17 @@
+data/chessData.csv
+data/games.csv
+data/random_evals.csv
+data/tactic_evals.csv
+img/BlackBishop.png
+img/BlackKing.png
+img/BlackKnight.png
+img/BlackPawn.png
+img/BlackQueen.png
+img/BlackRook.png
+img/WhiteBishop.png
+img/WhiteKing.png
+img/WhiteKnight.png
+img/WhitePawn.png
+img/WhiteQueen.png
+img/WhiteRook.png
+weights/evaluator_simple_bot.pth
