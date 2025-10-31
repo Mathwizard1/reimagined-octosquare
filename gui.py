@@ -1,433 +1,677 @@
+"""
+Chess GUI using DearPyGUI
+Refactored for better performance and maintainability
+"""
+
 import dearpygui.dearpygui as dpg
 import os
-
 import chess
-from myengine import myEngine
+from typing import Optional, Tuple, List
+from dataclasses import dataclass
+from enum import Enum
 
+# Import your existing modules
+from engine import AbstractEngine, GameResult
 import piece_slicer as p_slice
 
-if not os.path.exists(p_slice.directory):
-    os.makedirs(p_slice.directory, exist_ok=True)  # exist_ok=True will not raise an error if the directory already exists
-    p_slice.slice_pieces()
+class ClickState(Enum):
+    """Enumeration for click states"""
+    NONE = 0
+    FIRST_CLICK = 1
+    SECOND_CLICK = 2
+    PROMOTION = 3
 
 
-#screen setting
-screenWidth, screenHeight = 1280, 720
-r1 = 1 / 2
-r2 = 1 / 3
-r3 = 2 / 5
-
-# Chessboard settings
-board_size = 8  # 8x8 chessboard
-square_size = 75  # Size of each square
-board_width = board_size * square_size
-board_height = board_size * square_size
-
-column_style = " \ta \t\t b \t\t c \t\t d \t\t e \t\t f \t\t g \t\t h\t "
-flipped = 0
-
-# dict to hold textures
-chess_pieces = {}
-piece_scale = 0.55
-
-
-# Algebraic notation
-click_num = 0
-current_notation = ""
-hold_piece = ""
-
-# small offset
-ofs = 10
-
-# engines
-engine = myEngine()
-
-def bot_selection(sender):
-    print(f"{sender} bot selection Needs work")
-
-# Function to load an image as a texture and store it in the dictionary
-def load_image_as_texture(image_path, tag):
-    width, height, channels, image_data = dpg.load_image(image_path)
+@dataclass
+class BoardSettings:
+    """Configuration for board display"""
+    board_size: int = 8
+    square_size: int = 75
+    piece_scale: float = 0.55
+    offset: int = 10
     
-    # Add texture only if it doesn't already exist in the dictionary
-    if tag not in chess_pieces:
-        with dpg.texture_registry(show=False):
-            dpg.add_static_texture(width, height, image_data, tag=tag)
-        chess_pieces[tag] = (width, height)
-
-def valid_click(val):
-    if(val > ofs and val < board_size * square_size + ofs):
-        return True
-    return False
-
-# Callback function to get the mouse position relative to the window
-def mouse_clicked(sender, app_data, user_data):
-    # Check if the mouse is inside the window when clicked
-    mouse_pos = dpg.get_mouse_pos()  # Get global mouse position
-    window_pos = dpg.get_item_pos(user_data)  # Get window position
-    window_size = dpg.get_item_rect_size(user_data)  # Get window size
-
-    # Check if the click happened inside the window
-    if (window_pos[0] <= mouse_pos[0] <= window_pos[0] + window_size[0] and 
-       window_pos[1] <= mouse_pos[1] <= window_pos[1] + window_size[1]):
-
-        # Calculate the relative mouse position inside the window
-        relative_pos = (mouse_pos[0] - window_pos[0], mouse_pos[1] - window_pos[1])
-        #print(f"Mouse clicked at: {relative_pos} (relative to the window)")
-        
-        r0 = int(relative_pos[0] / square_size)
-        f0 = int(relative_pos[1] / square_size)
-
-        window_actv = dpg.get_active_window()
-        if(window_actv == dpg.get_alias_id("board_Window")):
-            global click_num, current_notation, hold_piece
-            color = (255, 0, 0)
-
-            if(valid_click(relative_pos[0]) and valid_click(relative_pos[1])):
-                r = (1 - flipped) * r0 + (flipped) * (7 - r0)
-                f = (1 - flipped) * (7 - f0) + (flipped) * f0
-
-                square_val = (r) + (f) * 8
-                #print(f"[{r,f}]")
-
-                if(click_num == 0):
-                    if(engine.board.piece_at(square_val)):
-                        hold_piece = engine.board.piece_at(square_val).symbol()
-                    else:
-                        hold_piece = ""
-                        current_notation = ""
-                        return
-                
-                if(click_num < 2):
-                    click_num += 1
-                    current_notation += chess.square_name(square_val)
-
-                if(click_num > 1):
-                    promotion_list = ["q","r","b","n"]
-                    promotion_list = promotion_list if(f == 0) else [x.upper() for x in promotion_list]
-
-                    if(click_num == 2 and 
-                       ((hold_piece == "p" and f == 0) or (hold_piece == "P" and f == 7))):
-                        click_num += 1
-                        color = (0, 0, 255)
-
-                        with dpg.draw_layer(tag= "promotion_pieces", parent= "board_squares"):
-                            for x in range(2):
-                                for y in range(2):
-                                    top_left_x = (3 + y) * square_size
-                                    top_left_y = (3 + x) * square_size
-                                    dpg.draw_rectangle(
-                                        pmin=(top_left_x, top_left_y), 
-                                        pmax=(top_left_x + square_size, top_left_y + square_size), 
-                                        fill= color, parent= "promotion_pieces")
-                                    
-                                    tag = convert_symbol(promotion_list[2 * x + y])
-                                    width, height = chess_pieces[tag]
-                                    dpg.draw_image(tag, [top_left_x, top_left_y], [top_left_x + int(width * piece_scale), top_left_y + int(height * piece_scale)], parent= "promotion_pieces")
-                        
-                    elif(click_num == 3):
-                        if(3 <= r <= 4 and 3 <= f <= 4):
-                            click_num -= 1
-                            piece_chose = (1 - flipped) * ((r - 3) + 2 * (4 - f)) + flipped * ((4 - r) + 2 * (f - 3))
-                            current_notation += '=' + promotion_list[piece_chose].upper()
-                        else:
-                            click_num = 0
-                            current_notation = ""
-                            hold_piece = ""
-
-                            dpg.delete_item("tempRect")
-                            dpg.delete_item("promotion_pieces")
-                            return
-
-                    #print(current_notation)
-                    #print(click_num)
-
-                    try:
-                        input_move = engine.board.parse_san(current_notation)
-                        
-                        #print("valid")
-
-                        engine.move(input_move)
-
-                        color = (0, 255, 0)
-
-                        update_chess_moves()
-                    except:
-                        #print("invalid")
-                        if(click_num == 3):
-                            return
-                        hold_piece = ""
-
-                    dpg.delete_item("promotion_pieces")
-
-                    click_num = 0
-                    current_notation = ""
-
-            elif(click_num == 1):
-                click_num = 0
-                current_notation = ""
-                hold_piece = ""
-
-            dpg.delete_item("tempRect")
-            if(hold_piece != ""):
-                top_left_x = r0 * square_size
-                top_left_y = f0 * square_size
-                dpg.draw_rectangle(
-                    pmin=(top_left_x, top_left_y), 
-                    pmax=(top_left_x + square_size, top_left_y + square_size), 
-                    fill= color, tag= "tempRect", parent= "board_squares")
-
-            draw_pieces()
-
-def submit_Fen(sender, app_data, user_data):
-    user_input = dpg.get_value("string_input")
-    #print(f"Submitted Text: {user_input}")
-
-    engine.setup_board(user_input)
-    update_chess_moves()
-    draw_pieces()
-
-# reset board to start
-def board_start():
-    global click_num, current_notation, hold_piece
-    click_num = 0
-    hold_piece = ""
-    current_notation = ""
+    @property
+    def board_width(self) -> int:
+        return self.board_size * self.square_size
     
-    dpg.delete_item("tempRect")
-    dpg.delete_item("promotion_pieces")
+    @property
+    def board_height(self) -> int:
+        return self.board_size * self.square_size
 
-    engine.reset_board()
-    update_chess_moves()
-    draw_pieces()
 
-def engine_random():
-    engine.random_move()
-    update_chess_moves()
-    draw_pieces()
+@dataclass
+class ScreenSettings:
+    """Configuration for screen layout"""
+    width: int = 1280
+    height: int = 720
+    board_ratio: float = 0.5
+    notation_ratio: float = 0.3
+    eval_ratio: float = 0.4
 
-def engine_auto():
-    engine.autoplay()
-    update_chess_moves()
-
-def engine_automove():
-    if(engine.enabled):
-        user_input = dpg.get_value("eng_timer1")
-        #print(f"timer: {user_input}")
-
-        engine.best_move(user_input)
-        update_chess_moves()
-        draw_pieces()
-
-# Function to update the displayed moves in the scrollable text
-def update_chess_moves():
-    # Clear previous content in the child window and add updated moves
-    dpg.delete_item("moves_holder") 
-    dpg.delete_item("to_move_holder")
-    dpg.delete_item("autoplay")
-    dpg.delete_item("over")
-
-    moves_number = len(engine.chess_moves)
-    with dpg.group(tag="moves_holder", parent= "notation"):
-        for m in range(0, moves_number - 2, 2):
-            dpg.add_text(str(m // 2 + 1) + ") " + engine.chess_moves[m] + "\t" + engine.chess_moves[m + 1] + "\n")
+###########################################################
+class ChessGUI:
+    """
+    ChessGUI class
+    """
+    
+    def __init__(self, engine: AbstractEngine):
+        self.engine = engine
+        self.board_settings = BoardSettings()
+        self.screen_settings = ScreenSettings()
         
-        if(moves_number % 2):
-            dpg.add_text(str(moves_number // 2 + 1) + ") " + engine.chess_moves[moves_number - 1] + "\t\n")
-        elif(moves_number > 0):
-            dpg.add_text(str(moves_number // 2) + ") " + engine.chess_moves[moves_number - 2] + "\t" + engine.chess_moves[moves_number - 1] + "\n")
+        # UI State
+        self.flipped = False
+        self.click_state = ClickState.NONE
+        self.selected_square = -1
+        self.move_notation = ""
+        self.hold_piece = ""
+        
+        # Piece textures
+        self.piece_textures = {}
+
+        # UI element tags for cleanup
+        self.temp_elements = set()
+        
+        # Initialize piece slicer
+        self._initialize_pieces()
+        
+        # Set up engine observer
+        self.engine.add_observer(self._on_engine_event)
+    
+    def _initialize_pieces(self):
+        """Initialize piece images"""
+        if not os.path.exists(p_slice.directory):
+            os.makedirs(p_slice.directory, exist_ok=True)
+            p_slice.slice_pieces()
+    
+    def _on_engine_event(self, event: str, engine: AbstractEngine, **kwargs):
+        """Handle engine state changes"""
+        if event in ["move_made", "reset", "position_set", "move_undone"]:
+            self._update_board_display()
+            self._update_move_notation()
+        elif event in ["autoplay_toggled", "autoplay_set"]:
+            self._update_autoplay_display()
+    
+    # ============ Texture Management ============
+    
+    def _load_piece_texture(self, image_path: str, tag: str):
+        """Load a piece image as texture"""
+        if tag not in self.piece_textures:
+            try:
+                width, height, channels, image_data = dpg.load_image(image_path)
+                with dpg.texture_registry(show=False):
+                    dpg.add_static_texture(width, height, image_data, tag=tag)
+                self.piece_textures[tag] = (width, height)
+            except Exception as e:
+                print(f"Failed to load texture {tag}: {e}")
+    
+    def _convert_piece_symbol(self, symbol: str) -> str:
+        """Convert chess piece symbol to texture tag"""
+        color_name = p_slice.color_name[0] if symbol.islower() else p_slice.color_name[1]
+        piece_map = {
+            'k': 'King', 'q': 'Queen', 'r': 'Rook', 
+            'b': 'Bishop', 'n': 'Knight', 'p': 'Pawn'
+        }
+        return color_name + piece_map[symbol.lower()]
+    
+    # ============ Coordinate Conversion ============
+    
+    def _screen_to_board(self, screen_pos: Tuple[int, int]) -> Tuple[int, int]:
+        """Convert screen coordinates to board coordinates"""
+        x, y = screen_pos
+        file = int(x / self.board_settings.square_size)
+        rank = int(y / self.board_settings.square_size)
+        
+        if self.flipped:
+            file = 7 - file
         else:
-            dpg.add_text("No moves\tNo moves", parent= "moves_holder")
-
-    if(engine.white_move):
-        dpg.add_text("WHITE to move", tag= "to_move_holder", parent= "notation_Window")
-    else:
-        dpg.add_text("BLACK to move", tag= "to_move_holder", parent= "notation_Window")
-
-    if(engine.enabled):
-        dpg.add_text("Autoplay On", tag= "autoplay", parent= "notation_Window")
-
-    if(engine.game_result != None):
-        dpg.add_text(engine.game_result, tag= "over", parent= "evaluation_Window")
-
-def convert_symbol(symb: str):
-    name = ""
-
-    if(symb.islower()):
-        name = p_slice.color_name[0]
-    else:
-        symb = symb.lower()
-        name = p_slice.color_name[1]
-
-    symb_map = {
-        "k": "King",
-        "q": "Queen",
-        "r": "Rook",
-        "b": "Bishop",
-        "n": "Knight",
-        "p": "Pawn"
-    }
-
-    return name+symb_map[symb]
-
-# Callback function for the button
-def board_flipper(sender, app_data):
-    dpg.delete_item("file_text")
-    dpg.delete_item("rank_text")
-
-    global flipped
-    if(flipped == 1):
-        dpg.add_text(column_style.upper(), tag= "file_text", parent= "board_display")
-        with dpg.group(tag= "rank_text", parent= "board_display"):
-            for i in range(9, 0, -1):
-                dpg.add_text(str(i), pos=(board_width + ofs, square_size * (9 - i - 0.3)))
-        flipped = 0
-    else:
-        dpg.add_text(column_style[::-1].upper(), tag= "file_text", parent= "board_display")
-        with dpg.group(tag= "rank_text", parent= "board_display"):
-            for i in range(9, 0, -1):
-                dpg.add_text(str(9 - i), pos=(board_width + ofs, square_size * (9 - i - 0.3)))
-        flipped = 1
-
-    draw_pieces()
-
-# draw position
-def draw_pieces():
-    # erase
-    dpg.delete_item("piece_position")
-
-    # draw
-    with dpg.draw_layer(tag= "piece_position", parent= "board_squares"):
-        # Iterate over all squares (0 to 63)
-        for square in chess.SQUARES:
-            piece = engine.board.piece_at(square)
-
-            if piece:
-                # Get the rank and file of the square
-                rank = (1 - flipped) * (7 - chess.square_rank(square)) + (flipped) * chess.square_rank(square)
-                file = (1 - flipped) * chess.square_file(square) + (flipped) * (7 - chess.square_file(square))
-
-                tag = convert_symbol(piece.symbol())
-
-                if tag in chess_pieces:
-                        width, height = chess_pieces[tag]
-                        dpg.draw_image(tag, [square_size * file, square_size * rank], [square_size * file + int(width * piece_scale), square_size * rank + int(height * piece_scale)], parent= "piece_position")
-
-# Create a resizable window
-def create_window():
-    with dpg.window(label="board window", tag="board_Window", pos= (0, 0), no_resize= True,
-                    no_collapse= True, no_close= True, no_move= True,
-                    width = screenWidth * r1, height= screenHeight):
+            rank = 7 - rank
+            
+        return file, rank
+    
+    def _board_to_screen(self, board_pos: Tuple[int, int]) -> Tuple[int, int]:
+        """Convert board coordinates to screen coordinates"""
+        file, rank = board_pos
         
-        with dpg.group(tag= "board_display"):
-            with dpg.drawlist(width=board_width, height=board_height, tag= "board_squares"):
-                for row in range(board_size):
-                    for col in range(board_size):
-                        # Determine color based on row and column index (alternate between white and black)
-                        color = p_slice.white_color if (row + col) % 2 == 0 else p_slice.brown_color
-                        # Calculate the square position
-                        top_left_x = col * square_size
-                        top_left_y = row * square_size
-                        bottom_right_x = top_left_x + square_size
-                        bottom_right_y = top_left_y + square_size
-                        # Draw the square
-                        dpg.draw_rectangle(
-                            pmin=(top_left_x, top_left_y), 
-                            pmax=(bottom_right_x, bottom_right_y), 
-                            color=(0, 0, 0, 255),  # Optional border color (black)
-                            fill=color)
-                draw_pieces()
-
-            # Add column with row numbers (1 to 8)
-            with dpg.group(tag= "rank_text", parent= "board_display"):
-                for i in range(9, 0, -1):
-                    dpg.add_text(str(i), pos=(board_width + ofs, square_size * (9 - i - 0.3)))  # Position each number in a column
+        if self.flipped:
+            screen_file = 7 - file
+            screen_rank = rank
+        else:
+            screen_file = file
+            screen_rank = 7 - rank
+            
+        return (screen_file * self.board_settings.square_size,
+                screen_rank * self.board_settings.square_size)
+    
+    def _is_valid_click(self, pos: Tuple[int, int]) -> bool:
+        """Check if click position is within board bounds"""
+        x, y = pos
+        return (self.board_settings.offset <= x <= self.board_settings.board_width + self.board_settings.offset and
+                self.board_settings.offset <= y <= self.board_settings.board_height + self.board_settings.offset)
+    
+    # ============ Move Input Handling ============
+    
+    def _handle_mouse_click(self, sender, app_data, user_data):
+        """Handle mouse clicks on the board"""
+        # Get mouse position relative to board window
+        mouse_pos = dpg.get_mouse_pos()
+        window_pos = dpg.get_item_pos(user_data)
+        window_size = dpg.get_item_rect_size(user_data)
         
-            # Add file in a row
-            dpg.add_text(column_style.upper(), tag= "file_text", parent= "board_display")
-
-        with dpg.group(tag = "board_buttons", horizontal= True):
-            dpg.add_button(label="Flip Board", callback= board_flipper)
-            dpg.add_button(label="New Board", callback= board_start)
-            dpg.add_button(label="<-")
-            dpg.add_button(label="->")
-
-    # Set a handler for mouse clicks
-    with dpg.handler_registry():
-        dpg.add_mouse_click_handler(callback=mouse_clicked, user_data="board_Window")
-
-    with dpg.window(label="notation window", tag="notation_Window", pos= (int(screenWidth * r1), 0), 
-                    no_resize= True, no_collapse= True, no_close= True, no_move= True,
-                    width = int(screenWidth * (1 - r1) * r2), height= int(screenHeight * r3)):
-        # Create a scrollable child window to display the moves
-        with dpg.child_window(width = int(screenWidth * (1 - r1) * (r2 - 0.03)), height= int(screenHeight * (r3 - 0.1)) , 
-                              border=True, tag= "notation"):
-            # Display the formatted chess moves
-            dpg.add_text("  WHITE\tBLACK\n", parent= "notation")
-            dpg.add_text("No moves\tNo moves", tag = "moves_holder", parent= "notation")
-            dpg.add_text("WHITE to move", tag= "to_move_holder", parent= "notation_Window")
-
-    with dpg.window(label="engine window", tag="engine_Window", pos= (int(screenWidth * (r1 + r2 - r1 * r2)), 0), 
-                    no_resize= True, no_collapse= True, no_close= True, no_move= True,
-                    width = int(screenWidth * (1 - r1) * (1 - r2)), height= int(screenHeight * r3)):
+        # Check if click is within board window
+        if not (window_pos[0] <= mouse_pos[0] <= window_pos[0] + window_size[0] and
+                window_pos[1] <= mouse_pos[1] <= window_pos[1] + window_size[1]):
+            return
         
-        with dpg.group(tag= "engine1_param"):
-            dpg.add_text("Engine 1 parameter (White / autoplay):")
-            dpg.add_button(label= "Select Bot", tag= 'engine1', callback= bot_selection)
-            # Add an integer slider for timer
-            dpg.add_slider_int(label="(secs) process", tag= "eng_timer1", default_value=10, min_value=10, max_value=120)
+        # Get relative position
+        rel_pos = (mouse_pos[0] - window_pos[0], mouse_pos[1] - window_pos[1])
+        
+        # Check if click is on board
+        if not self._is_valid_click(rel_pos):
+            return
+        
+        # Convert to board coordinates
+        file, rank = self._screen_to_board(rel_pos)
+        square = chess.square(file, rank)
+        
+        self._process_square_click(square, rel_pos)
+    
+    def _process_square_click(self, square: int, screen_pos: Tuple[int, int]):
+        """Process a click on a specific square"""
+        if self.click_state == ClickState.NONE:
+            self._handle_first_click(square, screen_pos)
+        elif self.click_state == ClickState.FIRST_CLICK:
+            self._handle_second_click(square, screen_pos)
+        elif self.click_state == ClickState.PROMOTION:
+            self._handle_promotion_click(square, screen_pos)
+    
+    def _handle_first_click(self, square: int, screen_pos: Tuple[int, int]):
+        """Handle first click of move input"""
+        piece = self.engine.get_piece_at(square)
+        if piece and ((piece.color == chess.WHITE and self.engine.current_turn) or
+                     (piece.color == chess.BLACK and not self.engine.current_turn)):
+            self.selected_square = square
+            self.move_notation = chess.square_name(square)
+            self.hold_piece = piece.symbol()
+            self.click_state = ClickState.FIRST_CLICK
+            self._highlight_square(screen_pos, p_slice.highlight_color, self.hold_piece)  # highlight color
+    
+    def _handle_second_click(self, square: int, screen_pos: Tuple[int, int]):
+        """Handle second click of move input"""
+        if square == self.selected_square:
+            # Clicked same square - cancel move
+            self._reset_move_input()
+            return
+        
+        self.move_notation += chess.square_name(square)
+        
+        # Check for pawn promotion
+        piece = self.engine.get_piece_at(self.selected_square)
+        if (piece and piece.piece_type == chess.PAWN and
+            ((piece.color == chess.WHITE and chess.square_rank(square) == 7) or
+             (piece.color == chess.BLACK and chess.square_rank(square) == 0))):
+            self.click_state = ClickState.PROMOTION
+            self._show_promotion_dialog(screen_pos)
+            return
+        
+        self._attempt_move()
+    
+    def _handle_promotion_click(self, square: int, screen_pos: Tuple[int, int]):
+        """Handle promotion piece selection"""
+        promotion_pieces = ('q', 'r', 'b', 'n')
 
-        with dpg.group(tag= "engine2_param", pos= (0, int(screenHeight * r3 / 2))):
-            dpg.add_text("Engine 2 parameter (Black):")
-            dpg.add_button(label= "Select Bot", tag= 'engine2', callback= bot_selection)
-            # Add an integer slider for timer
-            dpg.add_slider_int(label="(secs) process", tag= "eng_timer2", default_value=10, min_value=10, max_value=120)
+        # Determine if click is within promotion dialog area
+        file, rank = self._screen_to_board(screen_pos)
+        if 3 <= file <= 4 and 3 <= rank <= 4:
+            # Piece index coordinates
+            piece_index = (file - 3) + 2 * (4 - rank)
+            if(self.flipped):
+                piece_index = (4 - file) + 2 * (rank - 3)
+
+            if 0 <= piece_index < len(promotion_pieces):
+                promotion_piece = promotion_pieces[piece_index]
+                self.move_notation += '=' + promotion_piece.upper()
+                self._attempt_move()
+        else:
+            # Clicked outside promotion dialog - cancel
+            self._reset_move_input()
+    
+    ## TODO proper move display
+    def _attempt_move(self):
+        """Attempt to make the current move"""
+        # try:
+        success = self.engine.make_move_san(self.move_notation)
+        #     if success:
+        #         self._highlight_square(None, (0, 255, 0))  # Green for valid move
+        #     else:
+        #         self._highlight_square(None, (255, 0, 0))  # Red for invalid move
+        # except Exception:
+        #     self._highlight_square(None, (255, 0, 0))  # Red for invalid move
+        # finally:
+        self._reset_move_input()
+    
+    def _reset_move_input(self):
+        """Reset move input state"""
+        self.click_state = ClickState.NONE
+        self.selected_square = -1
+        self.move_notation = ""
+        self.hold_piece = ""
+        self._clear_temporary_elements()
+    
+    # ============ Visual Feedback ============
+    
+    def _highlight_square(self, screen_pos: Optional[Tuple[int, int]], color: Tuple[int, int, int], piece_type: Optional[str]= None):
+        """Highlight a square with given color"""
+        self._clear_temporary_elements()
+        
+        if screen_pos:
+            x, y = screen_pos
+            square_x = (x // self.board_settings.square_size) * self.board_settings.square_size
+            square_y = (y // self.board_settings.square_size) * self.board_settings.square_size
+            
+            tag = "temp_highlight"
+            with dpg.draw_layer(tag=tag, parent= "board_squares"):
+                dpg.draw_rectangle(
+                    pmin=(square_x, square_y),
+                    pmax=(square_x + self.board_settings.square_size, square_y + self.board_settings.square_size),
+                    fill=color,
+                )
+
+                # Draw piece also on the square
+                if(piece_type):
+                    texture_tag = self._convert_piece_symbol(piece_type)
+                    if texture_tag in self.piece_textures:
+                        width, height = self.piece_textures[texture_tag]
+                        scaled_w = int(width * self.board_settings.piece_scale)
+                        scaled_h = int(height * self.board_settings.piece_scale)
+
+                        dpg.draw_image(
+                            texture_tag,
+                            pmin=(square_x, square_y),
+                            pmax=(square_x + scaled_w, square_y + scaled_h),
+                        )
+
+            self.temp_elements.add(tag)
+    
+    def _show_promotion_dialog(self, screen_pos: Tuple[int, int]):
+        """Show promotion piece selection dialog"""
+        tag_base = "promotion_"
+        
+        promotion_pieces = ('q', 'r', 'b', 'n')
+        with dpg.draw_layer(tag=tag_base + "layer", parent="board_squares"):
+            for i in range(2):
+                for j in range(2):
+                    x = (3 + j) * self.board_settings.square_size
+                    y = (3 + i) * self.board_settings.square_size
+                    
+                    # Draw background rectangle
+                    rect_tag = f"{tag_base}rect_{i}_{j}"
+                    dpg.draw_rectangle(
+                        pmin=(x, y),
+                        pmax=(x + self.board_settings.square_size, y + self.board_settings.square_size),
+                        fill=(0, 0, 255),
+                        tag=rect_tag,
+                        parent=tag_base + "layer"
+                    )
+                    
+                    # Draw piece
+                    piece_idx = i * 2 + j
+                    if piece_idx < len(promotion_pieces):
+                        piece_symbol = promotion_pieces[piece_idx]
+                        if not self.engine.current_turn:  # Black promotion
+                            piece_symbol = piece_symbol.lower()
+                        else:
+                            piece_symbol = piece_symbol.upper()
+                        
+                        texture_tag = self._convert_piece_symbol(piece_symbol)
+                        if texture_tag in self.piece_textures:
+                            width, height = self.piece_textures[texture_tag]
+                            scaled_w = int(width * self.board_settings.piece_scale)
+                            scaled_h = int(height * self.board_settings.piece_scale)
+                            
+                            piece_tag = f"{tag_base}piece_{i}_{j}"
+                            dpg.draw_image(
+                                texture_tag,
+                                [x, y],
+                                [x + scaled_w, y + scaled_h],
+                                tag=piece_tag,
+                                parent=tag_base + "layer"
+                            )
+        
+        self.temp_elements.add(tag_base + "layer")
+    
+    def _clear_temporary_elements(self):
+        """Clear all temporary visual elements"""
+        for tag in list(self.temp_elements):
+            if dpg.does_item_exist(tag):
+                dpg.delete_item(tag)
+        self.temp_elements.clear()
+    
+    # ============ Board Display ============
+    
+    def _update_board_display(self):
+        """Update the visual board display"""
+        self._clear_pieces()
+        self._draw_pieces()
+    
+    def _clear_pieces(self):
+        """Clear existing piece visuals"""
+        if dpg.does_item_exist("piece_layer"):
+            dpg.delete_item("piece_layer")
+    
+    def _draw_pieces(self):
+        """Draw all pieces on the board"""
+        with dpg.draw_layer(tag="piece_layer", parent="board_squares"):
+            for square in chess.SQUARES:
+                piece = self.engine.get_piece_at(square)
+                if piece:
+                    file = chess.square_file(square)
+                    rank = chess.square_rank(square)
+                    screen_pos = self._board_to_screen((file, rank))
+                    
+                    texture_tag = self._convert_piece_symbol(piece.symbol())
+                    if texture_tag in self.piece_textures:
+                        width, height = self.piece_textures[texture_tag]
+                        scaled_w = int(width * self.board_settings.piece_scale)
+                        scaled_h = int(height * self.board_settings.piece_scale)
+                        
+                        dpg.draw_image(
+                            texture_tag,
+                            screen_pos,
+                            [screen_pos[0] + scaled_w, screen_pos[1] + scaled_h],
+                            parent="piece_layer"
+                        )
+    
+    def _create_board_squares(self):
+        """Create the visual chessboard squares"""
+        with dpg.drawlist(width=self.board_settings.board_width, 
+                         height=self.board_settings.board_height, 
+                         tag="board_squares"):
+            for rank in range(8):
+                for file in range(8):
+                    color = (p_slice.white_color if (rank + file) % 2 == 0 
+                           else p_slice.brown_color)
+                    
+                    x = file * self.board_settings.square_size
+                    y = rank * self.board_settings.square_size
+                    
+                    dpg.draw_rectangle(
+                        pmin=(x, y),
+                        pmax=(x + self.board_settings.square_size, 
+                              y + self.board_settings.square_size),
+                        fill=color,
+                        color=(0, 0, 0, 255)
+                    )
+    
+    # ============ Move Notation Display ============
+    
+    def _update_move_notation(self):
+        """Update the move notation display"""
+        # Clear existing notation
+        if dpg.does_item_exist("moves_content"):
+            dpg.delete_item("moves_content")
+        
+        # Create new notation display
+        with dpg.group(tag="moves_content", parent="notation_scroll"):
+            formatted_moves = self.engine.get_formatted_moves()
+            
+            if not formatted_moves:
+                dpg.add_text("No moves\tNo moves")
+            else:
+                for move_num, white_move, black_move in formatted_moves:
+                    move_text = f"{move_num}) {white_move}\t{black_move if black_move else ''}"
+                    dpg.add_text(move_text)
+        
+        # Update turn indicator
+        if dpg.does_item_exist("turn_indicator"):
+            dpg.delete_item("turn_indicator")
+        
+        turn_text = "WHITE to move" if self.engine.current_turn else "BLACK to move"
+        dpg.add_text(turn_text, tag="turn_indicator", parent="notation_panel")
+    
+    def _update_autoplay_display(self):
+        """Update autoplay status display"""
+        if dpg.does_item_exist("autoplay_status"):
+            dpg.delete_item("autoplay_status")
+        
+        if self.engine.autoplay_enabled:
+            status_text = f"Autoplay: {self.engine.engine_color.name}"
+            dpg.add_text(status_text, tag="autoplay_status", parent="notation_panel")
+    
+    # ============ Button Callbacks ============
+    
+    def _on_flip_board(self):
+        """Handle board flip button"""
+        self.flipped = not self.flipped
+        self._update_coordinate_labels()
+        self._update_board_display()
+    
+    def _on_reset_board(self):
+        """Handle reset board button"""
+        self.engine.reset()
+        self._reset_move_input()
+    
+    def _on_undo_move(self):
+        """Handle undo move button"""
+        self.engine.undo_move()
+        self._reset_move_input()
+    
+    def _on_engine_move(self):
+        """Handle engine move button"""
+        time_limit = dpg.get_value("engine_time_slider")
+        self.engine.make_engine_move(time_limit)
+    
+    def _on_toggle_autoplay(self):
+        """Handle toggle autoplay button"""
+        self.engine.toggle_autoplay()
+    
+    def _on_set_position(self):
+        """Handle FEN position setup"""
+        fen = dpg.get_value("fen_input")
+        success = self.engine.set_position(fen)
+        if not success:
+            # Could add error feedback here
+            print("Invalid FEN string")
+    
+    def _update_coordinate_labels(self):
+        """Update file and rank labels based on flip state"""
+        # Clear existing labels
+        if dpg.does_item_exist("file_labels"):
+            dpg.delete_item("file_labels")
+        if dpg.does_item_exist("rank_labels"):
+            dpg.delete_item("rank_labels")
+        
+        # Create new labels
+        files = "abcdefgh" if not self.flipped else "hgfedcba"
+        dpg.add_text(f"\t{' \t \t'.join(files.upper())}  ", tag="file_labels", parent="board_display")
+        
+        with dpg.group(tag="rank_labels", parent="board_display"):
+            ranks = range(1, 9) if not self.flipped else range(8, 0, -1)
+            for i, rank in enumerate(ranks):
+                y_pos = i * self.board_settings.square_size + self.board_settings.square_size // 2
+                dpg.add_text(str(rank), pos=(self.board_settings.board_width + 15, y_pos))
+    
+    # ============ Window Creation ============
+    
+    def _create_board_window(self):
+        """Create the main board window"""
+        board_width = int(self.screen_settings.width * self.screen_settings.board_ratio)
+        
+        with dpg.window(label="Chess Board", tag="board_window", 
+                       pos=(0, 0), width=board_width, height=self.screen_settings.height,
+                       no_resize=True, no_collapse=True, no_close=True, no_move=True):
+            
+            with dpg.group(tag="board_display"):
+                self._create_board_squares()
+                self._draw_pieces()
+                self._update_coordinate_labels()
+            
+            # Board controls
+            with dpg.group(tag="board_controls", horizontal=True):
+                dpg.add_button(label="Flip Board", callback= self._on_flip_board)
+                dpg.add_button(label="Reset", callback= self._on_reset_board)
+                dpg.add_button(label="Undo", callback= self._on_undo_move)
+            
+            # Mouse handler
+            with dpg.handler_registry():
+                dpg.add_mouse_click_handler(callback=self._handle_mouse_click, 
+                                          user_data="board_window")
+    
+    def _create_notation_window(self):
+        """Create the notation display window"""
+        x_pos = int(self.screen_settings.width * self.screen_settings.board_ratio)
+        width = int(self.screen_settings.width * (1 - self.screen_settings.board_ratio) * self.screen_settings.notation_ratio)
+        height = int(self.screen_settings.height * self.screen_settings.eval_ratio)
+        
+        with dpg.window(label="Game Notation", tag="notation_window",
+                       pos=(x_pos, 0), width=width, height=height,
+                       no_resize=True, no_collapse=True, no_close=True, no_move=True):
+            
+            with dpg.group(tag="notation_panel"):
+                dpg.add_text("WHITE\tBLACK")
+                
+                with dpg.child_window(width=width-20, height=height-100, 
+                                    border=True, tag="notation_scroll"):
+                    pass  # Content will be added by _update_move_notation()
+            
+            self._update_move_notation()
+    
+    def _create_engine_window(self):
+        """Create the engine control window"""
+        x_pos = int(self.screen_settings.width * (self.screen_settings.board_ratio + 
+                                                 (1 - self.screen_settings.board_ratio) * self.screen_settings.notation_ratio))
+        width = int(self.screen_settings.width * (1 - self.screen_settings.board_ratio) * (1 - self.screen_settings.notation_ratio))
+        height = int(self.screen_settings.height * self.screen_settings.eval_ratio)
+        
+        with dpg.window(label="Engine Controls", tag="engine_window",
+                       pos=(x_pos, 0), width=width, height=height,
+                       no_resize=True, no_collapse=True, no_close=True, no_move=True):
+            
+            dpg.add_text("Engine Settings:")
+            dpg.add_slider_float(label="Time (sec)", tag="engine_time_slider",
+                               default_value=1.0, min_value=0.1, max_value=10.0)
+            
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Engine Move", callback= self._on_engine_move)
+                dpg.add_button(label="Toggle Autoplay", callback= self._on_toggle_autoplay)
+    
+    def _create_position_window(self):
+        """Create the position setup window"""
+        x_pos = int(self.screen_settings.width * self.screen_settings.board_ratio)
+        y_pos = int(self.screen_settings.height * self.screen_settings.eval_ratio)
+        width = int(self.screen_settings.width * (1 - self.screen_settings.board_ratio))
+        height = int(self.screen_settings.height * (1 - self.screen_settings.eval_ratio))
+        
+        with dpg.window(label="Position Setup", tag="position_window",
+                       pos=(x_pos, y_pos), width=width, height=height,
+                       no_resize=True, no_collapse=True, no_close=True, no_move=True):
+                        
+            # Game status
+            dpg.add_text("Game Status:")
+            
+            # This will be updated by engine events
+            if dpg.does_item_exist("game_status"):
+                dpg.delete_item("game_status")
+            
+            result = self.engine.game_result
+            if result != GameResult.IN_PROGRESS:
+                status_text = {
+                    GameResult.WHITE_WIN: "White Wins!",
+                    GameResult.BLACK_WIN: "Black Wins!",
+                    GameResult.DRAW: "Draw"
+                }.get(result, "Game Over")
+                dpg.add_text(status_text, tag="game_status")
+            dpg.add_separator()
+
+            # Fen position setup
+            with dpg.group(horizontal= True):
+                dpg.add_text("FEN Position:")
+                dpg.add_input_text(tag="fen_input", hint="Enter FEN string", width=400)
+                dpg.add_button(label="Set Position", callback= self._on_set_position)
+    
+    # ============ Main Loop Integration ============
+    
+    def update(self):
+        """Update method to be called in main loop"""
+        # Check if engine should make a move in autoplay
+        if (self.engine.should_make_engine_move() and 
+            self.click_state == ClickState.NONE):
+            time_limit = dpg.get_value("engine_time_slider") if dpg.does_item_exist("engine_time_slider") else 1.0
+            self.engine.make_engine_move(time_limit)
+    
+    # ============ Initialization ============
+    
+    def initialize(self):
+        """Initialize the GUI"""
+        dpg.create_context()
+        
+        # Load piece textures
+        for row in range(p_slice.piece_grid_height):
+            for col in range(p_slice.piece_grid_width):
+                piece_name = p_slice.color_name[row] + p_slice.chess_name[col]
+                image_path = os.path.join(p_slice.directory, f"{piece_name}.png")
+                self._load_piece_texture(image_path, piece_name)
+        
+        # Create UI windows
+        self._create_board_window()
+        self._create_notation_window()
+        self._create_engine_window()
+        self._create_position_window()
+        
+        # Configure viewport
+        dpg.create_viewport(title="Chess Engine", 
+                          width=self.screen_settings.width, 
+                          height=self.screen_settings.height,
+                          resizable=False)
+        
+        dpg.setup_dearpygui()
+        dpg.show_viewport()
+    
+    def run(self):
+        """Run the GUI main loop"""
+        self.initialize()
+        
+        while dpg.is_dearpygui_running():
+            self.update()
+            dpg.render_dearpygui_frame()
+        
+        self.cleanup()
+    
+    def cleanup(self):
+        """Clean up resources"""
+        self.engine.remove_observer(self._on_engine_event)
+        dpg.destroy_context()
 
 
-    with dpg.window(label="evaluation window", tag="evaluation_Window", pos= (int(screenWidth * r1), int(screenHeight * r3)), 
-                    no_resize= True, no_collapse= True, no_close= True, no_move= True,
-                    width = int(screenWidth * (1 - r1)), height= int(screenWidth * (1 - r3))):       
-        with dpg.group(tag = "evaluation_buttons", horizontal= True):
-            dpg.add_button(label= "random_move", callback= engine_random)
-            dpg.add_button(label= "|>", callback= engine_auto)
-            dpg.add_button(label= "analyse")
+# Example concrete engine implementation (you'll need to create this)
+class SimpleEngine(AbstractEngine):
+    """
+    Simple concrete engine implementation
+    You should replace this with your actual engine from myengine.py
+    """
+    
+    def __init__(self):
+        super().__init__()
+        # Initialize your bot here
+        # self.bot = YourBotImplementation()
+    
+    def calculate_best_move(self, time_limit: float = 1.0) -> Optional[chess.Move]:
+        """Calculate best move - implement your logic here"""
+        legal_moves = self.get_legal_moves()
+        if not legal_moves:
+            return None
+        
+        # For now, just return a random move
+        # Replace this with your actual engine logic
+        import random
+        return random.choice(legal_moves)
 
-        with dpg.group(tag = "position_buttons", pos= (ofs, int(screenHeight * r3 / 4))):
-            dpg.add_text("Position:")
-            with dpg.group(tag= "position_setup", horizontal= True):
-                dpg.add_input_text(tag="string_input", hint="fen notation")
-                dpg.add_button(label="setup", callback=submit_Fen)
 
-# Initialize Dear PyGui
-dpg.create_context()
-
-#load individual pieces
-for row in range(p_slice.piece_grid_height):
-    for col in range(p_slice.piece_grid_width):
-        piece_name = p_slice.color_name[row] + p_slice.chess_name[col]  # For simplicity, name pieces
-        load_image_as_texture(p_slice.directory + "\\" + piece_name + ".png" , piece_name)
-
-
-# Create the window
-create_window()
-
-# Configure viewport to be resizable and set up a callback for resizing
-dpg.create_viewport(title="chess", 
-                    width= screenWidth, height= screenHeight, 
-                    max_width= screenWidth, max_height= screenHeight, resizable=False)
-
-# Setup and start the Dear PyGui rendering loop
-dpg.setup_dearpygui()
-dpg.show_viewport()
-
-#dpg.start_dearpygui()      
-while dpg.is_dearpygui_running():
-    #print("this will run every frame")
-
-    engine_automove()
-
-    dpg.render_dearpygui_frame()
-    #dpg.stop_dearpygui()
-
-# Cleanup Dear PyGui context after use
-dpg.destroy_context()
+# Main execution
+if __name__ == "__main__":
+    # Create your engine instance
+    engine = SimpleEngine()  # Replace with your actual engine
+    
+    # Create and run GUI
+    gui = ChessGUI(engine)
+    gui.run()

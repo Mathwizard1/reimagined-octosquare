@@ -16,10 +16,10 @@ piece_height = 120
 color_name = ("Black", "White")
 chess_name = ("Rook", "Bishop", "Queen", "King", "Knight", "Pawn")
 
+highlight_color = (255, 0, 0)
 
 
-
-offX = 0
+offX = 2
 offY = 28
 
 # Specify the directory path
