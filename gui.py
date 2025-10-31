@@ -12,7 +12,7 @@ from enum import Enum
 
 # Import your existing modules
 from engine import AbstractEngine, GameResult
-import piece_slicer as p_slice
+import piece_displayer as p_display
 
 class ClickState(Enum):
     """Enumeration for click states"""
@@ -25,19 +25,14 @@ class ClickState(Enum):
 @dataclass
 class BoardSettings:
     """Configuration for board display"""
-    board_size: int = 8
+    board_square: int = 8
     square_size: int = 75
     piece_scale: float = 0.55
     offset: int = 10
     
     @property
-    def board_width(self) -> int:
-        return self.board_size * self.square_size
-    
-    @property
-    def board_height(self) -> int:
-        return self.board_size * self.square_size
-
+    def board_size(self) -> int:
+        return self.board_square * self.square_size
 
 @dataclass
 class ScreenSettings:
@@ -80,9 +75,9 @@ class ChessGUI:
     
     def _initialize_pieces(self):
         """Initialize piece images"""
-        if not os.path.exists(p_slice.directory):
-            os.makedirs(p_slice.directory, exist_ok=True)
-            p_slice.slice_pieces()
+        if not os.path.exists(p_display.directory):
+            os.makedirs(p_display.directory, exist_ok=True)
+            p_display.slice_pieces()
     
     def _on_engine_event(self, event: str, engine: AbstractEngine, **kwargs):
         """Handle engine state changes"""
@@ -107,7 +102,7 @@ class ChessGUI:
     
     def _convert_piece_symbol(self, symbol: str) -> str:
         """Convert chess piece symbol to texture tag"""
-        color_name = p_slice.color_name[0] if symbol.islower() else p_slice.color_name[1]
+        color_name = p_display.color_name[0] if symbol.islower() else p_display.color_name[1]
         piece_map = {
             'k': 'King', 'q': 'Queen', 'r': 'Rook', 
             'b': 'Bishop', 'n': 'Knight', 'p': 'Pawn'
@@ -146,8 +141,8 @@ class ChessGUI:
     def _is_valid_click(self, pos: Tuple[int, int]) -> bool:
         """Check if click position is within board bounds"""
         x, y = pos
-        return (self.board_settings.offset <= x <= self.board_settings.board_width + self.board_settings.offset and
-                self.board_settings.offset <= y <= self.board_settings.board_height + self.board_settings.offset)
+        return (self.board_settings.offset <= x <= self.board_settings.board_size + self.board_settings.offset and
+                self.board_settings.offset <= y <= self.board_settings.board_size + self.board_settings.offset)
     
     # ============ Move Input Handling ============
     
@@ -194,7 +189,7 @@ class ChessGUI:
             self.move_notation = chess.square_name(square)
             self.hold_piece = piece.symbol()
             self.click_state = ClickState.FIRST_CLICK
-            self._highlight_square(screen_pos, p_slice.highlight_color, self.hold_piece)  # highlight color
+            self._highlight_square(screen_pos, p_display.highlight_color, self.hold_piece)  # highlight color
     
     def _handle_second_click(self, square: int, screen_pos: Tuple[int, int]):
         """Handle second click of move input"""
@@ -239,15 +234,7 @@ class ChessGUI:
     ## TODO proper move display
     def _attempt_move(self):
         """Attempt to make the current move"""
-        # try:
-        success = self.engine.make_move_san(self.move_notation)
-        #     if success:
-        #         self._highlight_square(None, (0, 255, 0))  # Green for valid move
-        #     else:
-        #         self._highlight_square(None, (255, 0, 0))  # Red for invalid move
-        # except Exception:
-        #     self._highlight_square(None, (255, 0, 0))  # Red for invalid move
-        # finally:
+        self.engine.make_move_san(self.move_notation)
         self._reset_move_input()
     
     def _reset_move_input(self):
@@ -260,38 +247,36 @@ class ChessGUI:
     
     # ============ Visual Feedback ============
     
-    def _highlight_square(self, screen_pos: Optional[Tuple[int, int]], color: Tuple[int, int, int], piece_type: Optional[str]= None):
+    def _highlight_square(self, screen_pos: Tuple[int, int], color: Tuple[int, int, int], piece_type: Optional[str]= None):
         """Highlight a square with given color"""
         self._clear_temporary_elements()
+
+        x, y = screen_pos
+        square_x = (x // self.board_settings.square_size) * self.board_settings.square_size
+        square_y = (y // self.board_settings.square_size) * self.board_settings.square_size
         
-        if screen_pos:
-            x, y = screen_pos
-            square_x = (x // self.board_settings.square_size) * self.board_settings.square_size
-            square_y = (y // self.board_settings.square_size) * self.board_settings.square_size
-            
-            tag = "temp_highlight"
-            with dpg.draw_layer(tag=tag, parent= "board_squares"):
-                dpg.draw_rectangle(
-                    pmin=(square_x, square_y),
-                    pmax=(square_x + self.board_settings.square_size, square_y + self.board_settings.square_size),
-                    fill=color,
-                )
+        tag = "temp_highlight"
+        with dpg.draw_layer(tag=tag, parent= "board_squares"):
+            dpg.draw_rectangle(
+                pmin=(square_x, square_y),
+                pmax=(square_x + self.board_settings.square_size, square_y + self.board_settings.square_size),
+                fill=color,
+            )
 
-                # Draw piece also on the square
-                if(piece_type):
-                    texture_tag = self._convert_piece_symbol(piece_type)
-                    if texture_tag in self.piece_textures:
-                        width, height = self.piece_textures[texture_tag]
-                        scaled_w = int(width * self.board_settings.piece_scale)
-                        scaled_h = int(height * self.board_settings.piece_scale)
+            # Draw piece also on the square
+            if(piece_type):
+                texture_tag = self._convert_piece_symbol(piece_type)
+                if texture_tag in self.piece_textures:
+                    width, height = self.piece_textures[texture_tag]
+                    scaled_w = int(width * self.board_settings.piece_scale)
+                    scaled_h = int(height * self.board_settings.piece_scale)
+                    dpg.draw_image(
+                        texture_tag,
+                        pmin=(square_x, square_y),
+                        pmax=(square_x + scaled_w, square_y + scaled_h),
+                    )
 
-                        dpg.draw_image(
-                            texture_tag,
-                            pmin=(square_x, square_y),
-                            pmax=(square_x + scaled_w, square_y + scaled_h),
-                        )
-
-            self.temp_elements.add(tag)
+        self.temp_elements.add(tag)
     
     def _show_promotion_dialog(self, screen_pos: Tuple[int, int]):
         """Show promotion piece selection dialog"""
@@ -384,13 +369,13 @@ class ChessGUI:
     
     def _create_board_squares(self):
         """Create the visual chessboard squares"""
-        with dpg.drawlist(width=self.board_settings.board_width, 
-                         height=self.board_settings.board_height, 
+        with dpg.drawlist(width=self.board_settings.board_size, 
+                         height=self.board_settings.board_size, 
                          tag="board_squares"):
             for rank in range(8):
                 for file in range(8):
-                    color = (p_slice.white_color if (rank + file) % 2 == 0 
-                           else p_slice.brown_color)
+                    color = (p_display.white_color if (rank + file) % 2 == 0 
+                           else p_display.brown_color)
                     
                     x = file * self.board_settings.square_size
                     y = rank * self.board_settings.square_size
@@ -489,16 +474,16 @@ class ChessGUI:
             ranks = range(1, 9) if not self.flipped else range(8, 0, -1)
             for i, rank in enumerate(ranks):
                 y_pos = i * self.board_settings.square_size + self.board_settings.square_size // 2
-                dpg.add_text(str(rank), pos=(self.board_settings.board_width + 15, y_pos))
+                dpg.add_text(str(rank), pos=(self.board_settings.board_size + 15, y_pos))
     
     # ============ Window Creation ============
     
     def _create_board_window(self):
         """Create the main board window"""
-        board_width = int(self.screen_settings.width * self.screen_settings.board_ratio)
+        board_size = int(self.screen_settings.width * self.screen_settings.board_ratio)
         
         with dpg.window(label="Chess Board", tag="board_window", 
-                       pos=(0, 0), width=board_width, height=self.screen_settings.height,
+                       pos=(0, 0), width=board_size, height=self.screen_settings.height,
                        no_resize=True, no_collapse=True, no_close=True, no_move=True):
             
             with dpg.group(tag="board_display"):
@@ -581,8 +566,9 @@ class ChessGUI:
                     GameResult.DRAW: "Draw"
                 }.get(result, "Game Over")
                 dpg.add_text(status_text, tag="game_status")
+            
+            
             dpg.add_separator()
-
             # Fen position setup
             with dpg.group(horizontal= True):
                 dpg.add_text("FEN Position:")
@@ -596,27 +582,26 @@ class ChessGUI:
         # Check if engine should make a move in autoplay
         if (self.engine.should_make_engine_move() and 
             self.click_state == ClickState.NONE):
-            time_limit = dpg.get_value("engine_time_slider") if dpg.does_item_exist("engine_time_slider") else 1.0
-            self.engine.make_engine_move(time_limit)
+            self._on_engine_move()
     
     # ============ Initialization ============
     
     def initialize(self):
         """Initialize the GUI"""
         dpg.create_context()
-        
+
         # Load piece textures
-        for row in range(p_slice.piece_grid_height):
-            for col in range(p_slice.piece_grid_width):
-                piece_name = p_slice.color_name[row] + p_slice.chess_name[col]
-                image_path = os.path.join(p_slice.directory, f"{piece_name}.png")
+        for row in range(p_display.piece_grid_height):
+            for col in range(p_display.piece_grid_width):
+                piece_name = p_display.color_name[row] + p_display.chess_name[col]
+                image_path = os.path.join(p_display.directory, f"{piece_name}.png")
                 self._load_piece_texture(image_path, piece_name)
         
         # Create UI windows
         self._create_board_window()
         self._create_notation_window()
         self._create_engine_window()
-        self._create_position_window()
+        #self._create_position_window()
         
         # Configure viewport
         dpg.create_viewport(title="Chess Engine", 
@@ -625,6 +610,10 @@ class ChessGUI:
                           resizable=False)
         
         dpg.setup_dearpygui()
+        
+        #dpg.show_metrics()
+        #dpg.set_viewport_vsync(False)
+
         dpg.show_viewport()
     
     def run(self):
@@ -643,34 +632,9 @@ class ChessGUI:
         dpg.destroy_context()
 
 
-# Example concrete engine implementation (you'll need to create this)
-class SimpleEngine(AbstractEngine):
-    """
-    Simple concrete engine implementation
-    You should replace this with your actual engine from myengine.py
-    """
-    
-    def __init__(self):
-        super().__init__()
-        # Initialize your bot here
-        # self.bot = YourBotImplementation()
-    
-    def calculate_best_move(self, time_limit: float = 1.0) -> Optional[chess.Move]:
-        """Calculate best move - implement your logic here"""
-        legal_moves = self.get_legal_moves()
-        if not legal_moves:
-            return None
-        
-        # For now, just return a random move
-        # Replace this with your actual engine logic
-        import random
-        return random.choice(legal_moves)
-
-
 # Main execution
 if __name__ == "__main__":
-    # Create your engine instance
-    engine = SimpleEngine()  # Replace with your actual engine
+    engine = AbstractEngine()
     
     # Create and run GUI
     gui = ChessGUI(engine)
