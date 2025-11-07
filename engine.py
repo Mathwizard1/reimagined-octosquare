@@ -7,6 +7,7 @@ from enum import Enum
 import chess
 import threading
 
+from bot import AbstractBot
 
 class GameResult(Enum):
     """Enumeration for game results"""
@@ -28,7 +29,7 @@ class AbstractEngine:
     Defines the interface that all engine implementations must follow.
     """
 
-    def __init__(self, bot=None):
+    def __init__(self, bot:AbstractBot):
         """
         Initialize the base engine
         

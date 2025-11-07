@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 # Import your existing modules
+from bot import (
+    MinimaxBot
+)
 from engine import AbstractEngine, GameResult
 import piece_displayer as p_display
 
@@ -634,8 +637,9 @@ class ChessGUI:
 
 # Main execution
 if __name__ == "__main__":
-    engine = AbstractEngine()
-    
-    # Create and run GUI
+    bot = MinimaxBot()
+    engine = AbstractEngine(bot)
     gui = ChessGUI(engine)
+
+    # run GUI
     gui.run()
